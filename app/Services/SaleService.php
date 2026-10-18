@@ -1,0 +1,118 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Product;
+use App\Models\Sale;
+use App\Support\Money;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
+
+class SaleService
+{
+    /**
+     * Registers a sale and deducts stock atomically. Any failure rolls back everything.
+     *
+     * Every line is sold at the product's detal_price and stores its current major_price as unit_cost.
+     * Clients never choose the price.
+     *
+     * @param  array{client_id?: int|null, user_id: int, date?: Carbon|string|null, payment_method: string, payment_type?: string, payment_proof_path?: string|null}  $saleData
+     * @param  list<array{product_id: int, quantity: int}>  $items
+     */
+    public function createSale(array $saleData, array $items, ?UploadedFile $paymentProof = null): Sale
+    {
+        if ($items === []) {
+            throw ValidationException::withMessages([
+                'items' => 'La venta debe tener al menos un producto.',
+            ]);
+        }
+
+        // Stored before the transaction so the file exists; deleted again if anything below fails.
+        $proofPath = null;
+
+        if ($paymentProof !== null) {
+            $proofPath = $paymentProof->store('payment-proofs', 'public');
+
+            if ($proofPath === false) {
+                throw new RuntimeException('No se pudo guardar el comprobante de pago.');
+            }
+        }
+
+        try {
+            return DB::transaction(function () use ($saleData, $items, $proofPath): Sale {
+                $lines = [];
+                $totalCents = 0;
+
+                foreach ($items as $item) {
+                    $quantity = (int) $item['quantity'];
+
+                    if ($quantity < 1) {
+                        throw ValidationException::withMessages([
+                            'items' => 'La cantidad de cada producto debe ser al menos 1.',
+                        ]);
+                    }
+
+                    $product = Product::query()
+                        ->whereKey($item['product_id'])
+                        ->lockForUpdate()
+                        ->firstOrFail();
+
+                    // Re-checked with a conditional UPDATE below: lockForUpdate() is a no-op on SQLite.
+                    if ($product->total_stock < $quantity) {
+                        throw ValidationException::withMessages([
+                            'items' => "Stock insuficiente para {$product->name}: solicitado {$quantity}, disponible {$product->total_stock}.",
+                        ]);
+                    }
+
+                    $updated = Product::query()
+                        ->whereKey($product->getKey())
+                        ->where('total_stock', '>=', $quantity)
+                        ->decrement('total_stock', $quantity);
+
+                    if ($updated === 0) {
+                        throw ValidationException::withMessages([
+                            'items' => "Stock insuficiente para {$product->name}: solicitado {$quantity}.",
+                        ]);
+                    }
+
+                    $line = [
+                        'product_id' => $product->getKey(),
+                        'quantity' => $quantity,
+                        'unit_price' => $product->detal_price,
+                        'unit_cost' => $product->major_price,
+                    ];
+
+                    $totalCents += Money::toCents($line['unit_price']) * $quantity;
+                    $lines[] = $line;
+                }
+
+                $sale = Sale::create([
+                    'client_id' => $saleData['client_id'] ?? null,
+                    'user_id' => $saleData['user_id'],
+                    'total' => Money::fromCents($totalCents),
+                    'date' => $saleData['date'] ?? now(),
+                    'payment_method' => $saleData['payment_method'],
+                    'payment_type' => $saleData['payment_type'] ?? 'contado',
+                    'payment_proof_path' => $proofPath ?? ($saleData['payment_proof_path'] ?? null),
+                ]);
+
+                foreach ($lines as $line) {
+                    $sale->saleProducts()->create($line);
+                }
+
+                return $sale->load(['client', 'user', 'saleProducts.product']);
+            });
+        } catch (Throwable $e) {
+            if ($proofPath !== null) {
+                Storage::disk('public')->delete($proofPath);
+            }
+
+            throw $e;
+        }
+    }
+}

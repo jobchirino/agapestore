@@ -1,0 +1,124 @@
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400..700&family=Manrope:wght@400..800&display=swap');
+@import 'tailwindcss';
+@import '../../vendor/livewire/flux/dist/flux.css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../vendor/livewire/flux-pro/stubs/**/*.blade.php';
+@source '../../vendor/livewire/flux/stubs/**/*.blade.php';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+    /* Design system "Haute Atelier Precision" (DESIGN.md) */
+    --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-display: 'Bodoni Moda', ui-serif, Georgia, serif;
+
+    /* Fucsia Ágape (light mode primary) */
+    --color-agape: #be185d;
+    --color-agape-hover: #970046;
+    --color-agape-soft: #fce7f3; /* pink badges background */
+
+    /* Fucsia luminoso (dark mode primary) */
+    --color-agape-dark: #ff2e93;
+    --color-agape-dark-hover: #f43f9e;
+
+    /* Profit badges (emerald) */
+    --color-profit-bg: #dcfce7;
+    --color-profit-text: #15803d;
+
+    /* Low stock badges (amber) */
+    --color-warn-bg: #fef3c7;
+    --color-warn-text: #b45309;
+
+    /* Surfaces */
+    --color-canvas: #f5f5f7; /* macOS window background, light */
+    --color-ink: #09090b; /* base background, dark */
+    --color-panel: #141417; /* containers, dark */
+    --color-panel-raise: #1c1c21; /* raised cards, dark */
+
+    /* Flux accent = fuchsia, so primary buttons/rings match the brand */
+    --color-accent: var(--color-agape);
+    --color-accent-content: var(--color-agape);
+    --color-accent-foreground: var(--color-white);
+
+    --color-zinc-50: #fafafa;
+    --color-zinc-100: #f5f5f5;
+    --color-zinc-200: #e5e5e5;
+    --color-zinc-300: #d4d4d4;
+    --color-zinc-400: #a3a3a3;
+    --color-zinc-500: #737373;
+    --color-zinc-600: #525252;
+    --color-zinc-700: #404040;
+    --color-zinc-800: #262626;
+    --color-zinc-900: #171717;
+    --color-zinc-950: #0a0a0a;
+}
+
+@layer theme {
+    .dark {
+        --color-accent: var(--color-agape-dark);
+        --color-accent-content: var(--color-agape-dark);
+        --color-accent-foreground: var(--color-ink);
+    }
+}
+
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-gray-200, currentColor);
+    }
+
+    .dark *,
+    .dark ::after,
+    .dark ::before {
+        border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Numbers always use Manrope (tabular figures); Bodoni Moda is for headings only (DESIGN.md) */
+    .tnum {
+        font-feature-settings: 'tnum' 1, 'lnum' 1;
+    }
+
+    /* Alpine: hide elements until Alpine boots (avoids flash of the loading state) */
+    [x-cloak] {
+        display: none !important;
+    }
+
+    /* macOS glass pane for the sidebar (light mode) */
+    .glass-pane {
+        background: rgba(255, 255, 255, 0.72);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        box-shadow: inset -1px 0 0 rgba(229, 231, 235, 0.6);
+    }
+
+    .dark .glass-pane {
+        background: rgba(20, 20, 23, 0.72);
+        box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.1);
+    }
+
+    /* Card elevation, Level 2 (DESIGN.md) */
+    .card-raise {
+        box-shadow:
+            0 4px 20px -2px rgba(0, 0, 0, 0.05),
+            0 1px 2px 0 rgba(0, 0, 0, 0.02);
+    }
+}
+
+[data-flux-field]:not(ui-radio, ui-checkbox) {
+    @apply grid gap-2;
+}
+
+[data-flux-label] {
+    @apply !mb-0 !leading-tight;
+}
+
+input:focus[data-flux-control],
+textarea:focus[data-flux-control],
+select:focus[data-flux-control] {
+    @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
+}
