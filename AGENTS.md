@@ -27,9 +27,14 @@ Inventory and POS (sales register) app in Spanish-speaking domain, built on the 
 ## Structure
 
 - Routes: `routes/web.php` (dashboard requires `auth` + `verified`), `routes/settings.php`.
-- Pages are Livewire 4 single-file components under `resources/views/pages/` (`auth/`, `settings/`, `inventory.blade.php`). The component PHP sits on top, Blade below. Pages render inside `resources/views/layouts/app.blade.php` automatically (`livewire.component_layout`). Flux components live in `resources/views/flux`.
-- Inventory is the first real module: route `inventario` (name `inventory`), component `pages::inventory`, tests in `tests/Feature/InventoryPageTest.php`.
-- Sidebar (`resources/views/layouts/app/sidebar.blade.php`): logo, "Ágape Store", the four modules. Only Inventario is routed. Registrar Compra, Historial de Ventas, and Clientes render disabled with a "Pronto" tag until their routes exist. Do not link them before they do.
+- Pages are Livewire 4 single-file components under `resources/views/pages/` (`auth/`, `settings/`, `inventory.blade.php`, `pos.blade.php` and its child `pos/client-form.blade.php`). The component PHP sits on top, Blade below. Pages render inside `resources/views/layouts/app.blade.php` automatically (`livewire.component_layout`). Flux components live in `resources/views/flux`.
+- Inventory: route `inventario` (name `inventory`), component `pages::inventory`, tests in `tests/Feature/InventoryPageTest.php`. It also manages categories (create, rename, delete) from the "Categorías" modal.
+- POS: route `registrar-compra` (name `pos`), component `pages::pos`, tests in `tests/Feature/PosPageTest.php`.
+  - The cart stores only `[product_id => quantity]`. Prices and stock are re-read once per render from the DB (`#[Computed] lines`), so the displayed total always matches what `SaleService` charges. Do not copy product data into the cart.
+  - `pages::pos.client-form` is an isolated child component for quick client creation. It dispatches `client-created`; the POS listens with `#[On('client-created')]`. Keep it separate: its state must not re-render the POS (which has `wire:model.live` searches).
+  - The cart error (`cartError`) is a component property, not an error-bag key, because the service reports it under `items`, which has no matching field.
+- Sidebar (`resources/views/layouts/app/sidebar.blade.php`): logo, "Ágape Store", the four modules. Inventario and Registrar Compra are routed. Historial de Ventas and Clientes still render disabled with a "Pronto" tag until their routes exist; enable each one only when its page is built.
+- The sidebar is collapsible on desktop (`<flux:sidebar collapsible>`), and Flux persists the collapsed state in `localStorage` (`flux-sidebar-collapsed-desktop`). Do not manage that state yourself. Flux controls the width (`w-64` <-> `w-14`), so do not hardcode a width on the sidebar. Custom markup inside the sidebar must adapt with the `in-data-flux-sidebar-collapsed-desktop:` variant (see the "Pronto" rows and the theme selector).
 - Theme: `@fluxAppearance` (in `partials/head`) owns light/dark persistence in `localStorage`. The sidebar selector uses `x-model="$flux.appearance"`. Do not hardcode a `dark` class on `<html>`.
 - Design tokens (`resources/css/app.css` `@theme`): `font-display` = Bodoni Moda (headings only, never numbers), `font-sans` = Manrope (everything else, including all KPI figures). Numbers always use Manrope bold with `.tnum` (tabular figures). Fonts load from Google Fonts via CSS `@import`, not the Vite font plugin. Colors: `agape` (#BE185D), `agape-dark` (#FF2E93), `agape-soft`, `profit-*` (emerald), `warn-*` (amber), `canvas`, `ink`, `panel`, `panel-raise`. Flux's accent is fuchsia, so `variant="primary"` buttons follow the brand.
 - Logo file is `public/images/logo-agapestore.png` (the brief mentioned `logo-agape.jpeg`, which does not exist).
@@ -37,6 +42,7 @@ Inventory and POS (sales register) app in Spanish-speaking domain, built on the 
 - Fortify actions live in `app/Actions/Fortify/`. Config in `config/fortify.php`.
 - Domain models in `app/Models/`: `Category`, `Product`, `Client`, `Sale`, `SaleProduct`, `User`.
   - `SaleProduct` maps to table `sales_products` (set via `$table`).
+  - `Category` keeps a normalized `slug` (`Str::slug`, set by a `saving` hook) with a unique index. Uniqueness is checked on the slug, so "Bisutería", "bisuteria" and "BISUTERIA" collide. `name` stays as typed by the owner.
   - `Product` uses soft deletes. Deleting a product must not break sales history.
   - `Sale.date` is the business date, separate from `created_at`. Use it for filters and reports.
   - `SaleProduct.unit_price` (sale price, always `detal_price`) and `SaleProduct.unit_cost` (cost, `major_price`) are frozen at sale time. Never recompute them from the current product.
@@ -72,6 +78,12 @@ Inventory and POS (sales register) app in Spanish-speaking domain, built on the 
 - Sale prices come from the locked product, never from client input: `unit_price = detal_price`, `unit_cost = major_price`. The total is computed in integer cents.
 - All sales history filters (day, week, month, date range) query `sales.date`, never `created_at`.
 - Payment proofs are stored on the `public` disk under `payment-proofs/`, before the transaction. If the sale fails, `createSale` deletes the file, so no orphans remain.
+- Services report validation errors by database column name (`name`, `quantity`). Component properties may differ (`categoryName`, `adjustQuantity`), so map the keys when catching `ValidationException`. Unmapped keys fail silently: the server has the error but the UI shows nothing.
+- Flux renders the error itself for any field with a `label` (its name comes from `wire:model`). Do not add a second `<flux:error name="...">` for those or the message shows twice. Add an explicit `<flux:error>` only when the Flux field has no `label` prop (as with the custom-layout file input).
+- `@disabled($x)` breaks inside a `<flux:button>`: Blade treats the directive as an attribute and emits invalid PHP (parse error). Use the prop instead: `:disabled="$x"`. Plain HTML elements are fine with `@disabled`.
+- Success feedback is always a Flux toast `variant="success"`. Validation failures use `<flux:error>` plus a `variant="danger"` toast. See DESIGN.md "Feedback & Notifications".
+- Destructive actions never use `wire:confirm`. Split them into `openDelete(id)` (shows a Flux modal) and `confirmDelete()` (performs the delete). Product deletes are soft deletes, so sales history survives.
+- Do not bind inputs with `wire:model.live` in the same form as deferred `wire:model` fields. A live round-trip re-renders the form and can clobber an unsynced field (dropped digits). Compute live previews client-side with Alpine (see the profit preview in `pages/inventory.blade.php`).
 - Categories with products (including soft-deleted ones) cannot be deleted. `CategoryService::deleteCategory` checks this first.
 
 ## Starter-kit scaffolding (do not treat as app code)

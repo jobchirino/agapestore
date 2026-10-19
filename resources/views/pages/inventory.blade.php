@@ -37,21 +37,30 @@ new #[Title('Inventario')] class extends Component {
     // los errores de validación del servicio se muestren solos junto a cada campo.
     public ?int $editingId = null;
     public string $name = '';
-    public ?int $category_id = null;
+
+    // Texto, no int: así el select puede mostrar un marcador real con value="" en vez de
+    // caer en la primera categoría habilitada cuando no hay nada elegido.
+    public string $category_id = '';
     public string $detal_price = '';
     public string $major_price = '';
     public int $total_stock = 0;
     public ?string $currentImage = null;
     public $image = null;
 
+    // Confirmación de borrado (acción destructiva: primero se abre el modal, luego se confirma).
+    public ?int $deletingId = null;
+
     // Ajuste de stock.
     public ?int $adjustingId = null;
     public string $adjustKind = 'in';
     public int $adjustQuantity = 1;
 
-    // Nueva categoría.
+    // Categorías: crear, renombrar y eliminar desde el mismo modal de gestión.
+    public ?int $editingCategoryId = null;
     public string $categoryName = '';
     public string $categoryDescription = '';
+    public ?int $deletingCategoryId = null;
+    public ?string $deleteCategoryError = null;
 
     // Cualquier cambio de filtro vuelve a la página 1, si no podrías quedar en una página vacía.
     public function updatedSearch(): void
@@ -128,27 +137,22 @@ new #[Title('Inventario')] class extends Component {
         ];
     }
 
-    /**
-     * Vista previa de ganancia mientras el usuario escribe en el modal.
-     *
-     * @return array{amount: float, percentage: float}
-     */
-    #[Computed]
-    public function preview(): array
-    {
-        $detal = (float) $this->detal_price;
-        $major = (float) $this->major_price;
-
-        return [
-            'amount' => round($detal - $major, 2),
-            'percentage' => $major > 0 ? round(($detal - $major) / $major * 100, 0) : 0.0,
-        ];
-    }
-
     #[Computed]
     public function adjusting(): ?Product
     {
         return $this->adjustingId ? Product::query()->find($this->adjustingId) : null;
+    }
+
+    #[Computed]
+    public function deleting(): ?Product
+    {
+        return $this->deletingId ? Product::query()->find($this->deletingId) : null;
+    }
+
+    #[Computed]
+    public function deletingCategory(): ?Category
+    {
+        return $this->deletingCategoryId ? Category::query()->find($this->deletingCategoryId) : null;
     }
 
     public function selectCategory(?int $id): void
@@ -168,7 +172,7 @@ new #[Title('Inventario')] class extends Component {
 
         $this->editingId = $product->id;
         $this->name = $product->name;
-        $this->category_id = $product->category_id;
+        $this->category_id = (string) $product->category_id;
         $this->detal_price = (string) $product->detal_price;
         $this->major_price = (string) $product->major_price;
         $this->total_stock = $product->total_stock;
@@ -186,7 +190,8 @@ new #[Title('Inventario')] class extends Component {
     {
         $data = [
             'name' => $this->name,
-            'category_id' => $this->category_id,
+            // Se deja '' cuando no hay selección para que la validación dé un error claro.
+            'category_id' => $this->category_id === '' ? '' : (int) $this->category_id,
             'detal_price' => $this->detal_price,
             'major_price' => $this->major_price,
         ];
@@ -202,7 +207,7 @@ new #[Title('Inventario')] class extends Component {
                 $message = 'Producto creado.';
             }
         } catch (ValidationException $e) {
-            $this->setErrorBag($e->errors());
+            $this->failWith($e);
 
             return;
         }
@@ -236,7 +241,8 @@ new #[Title('Inventario')] class extends Component {
         try {
             $products->adjustStock($product, $change);
         } catch (ValidationException $e) {
-            $this->setErrorBag($e->errors());
+            // El servicio usa la clave "quantity"; en la vista el campo se llama "adjustQuantity".
+            $this->failWith($e, ['quantity' => 'adjustQuantity']);
 
             return;
         }
@@ -247,35 +253,128 @@ new #[Title('Inventario')] class extends Component {
 
     public function openCategory(): void
     {
-        $this->categoryName = '';
-        $this->categoryDescription = '';
-        $this->resetErrorBag();
+        $this->cancelCategoryEdit();
 
         Flux::modal('category-form')->show();
     }
 
+    public function editCategory(int $id): void
+    {
+        $category = Category::query()->findOrFail($id);
+
+        $this->editingCategoryId = $category->id;
+        $this->categoryName = $category->name;
+        $this->categoryDescription = $category->description ?? '';
+        $this->resetErrorBag();
+    }
+
+    public function cancelCategoryEdit(): void
+    {
+        $this->reset(['editingCategoryId', 'categoryName', 'categoryDescription']);
+        $this->resetErrorBag();
+    }
+
+    /**
+     * Crea una categoría nueva o guarda el renombrado, según el modo del modal.
+     */
     public function saveCategory(CategoryService $categories): void
     {
+        $data = [
+            'name' => $this->categoryName,
+            'description' => $this->categoryDescription,
+        ];
+
         try {
-            $categories->createCategory([
-                'name' => $this->categoryName,
-                'description' => $this->categoryDescription,
-            ]);
+            if ($this->editingCategoryId !== null) {
+                $categories->updateCategory(Category::query()->findOrFail($this->editingCategoryId), $data);
+                $message = 'Categoría actualizada.';
+            } else {
+                $categories->createCategory($data);
+                $message = 'Categoría creada.';
+            }
         } catch (ValidationException $e) {
-            $this->setErrorBag($e->errors());
+            // El servicio usa la clave "name"; en la vista el campo se llama "categoryName".
+            $this->failWith($e, ['name' => 'categoryName']);
 
             return;
         }
 
-        Flux::modal('category-form')->close();
-        Flux::toast(variant: 'success', text: 'Categoría creada.');
+        $this->cancelCategoryEdit();
+        Flux::toast(variant: 'success', text: $message);
     }
 
-    public function deleteProduct(int $id, ProductService $products): void
+    public function askDeleteCategory(int $id): void
     {
-        $products->deleteProduct(Product::query()->findOrFail($id));
+        $this->deletingCategoryId = $id;
+        $this->deleteCategoryError = null;
+        $this->resetErrorBag();
 
+        // Se cierra el panel de gestión para que la confirmación quede como único foco.
+        Flux::modal('category-form')->close();
+        Flux::modal('delete-category')->show();
+    }
+
+    public function confirmDeleteCategory(CategoryService $categories): void
+    {
+        if ($this->deletingCategoryId === null) {
+            return;
+        }
+
+        try {
+            $categories->deleteCategory(Category::query()->findOrFail($this->deletingCategoryId));
+        } catch (ValidationException $e) {
+            // El servicio bloquea el borrado si la categoría tiene productos.
+            $this->deleteCategoryError = collect($e->errors())->flatten()->first();
+            Flux::toast(variant: 'danger', text: 'No se pudo eliminar la categoría.');
+
+            return;
+        }
+
+        Flux::modal('delete-category')->close();
+        Flux::toast(variant: 'success', text: 'Categoría eliminada.');
+        $this->deletingCategoryId = null;
+    }
+
+    public function openDelete(int $id): void
+    {
+        $this->deletingId = $id;
+        $this->resetErrorBag();
+
+        Flux::modal('delete-product')->show();
+    }
+
+    /**
+     * Solo borra tras la confirmación explícita en el modal.
+     */
+    public function confirmDelete(ProductService $products): void
+    {
+        if ($this->deletingId === null) {
+            return;
+        }
+
+        $products->deleteProduct(Product::query()->findOrFail($this->deletingId));
+
+        Flux::modal('delete-product')->close();
         Flux::toast(variant: 'success', text: 'Producto eliminado.');
+        $this->deletingId = null;
+    }
+
+    /**
+     * Los servicios nombran los errores con claves de la BD (name, quantity...). La vista usa
+     * nombres de propiedades propias, así que aquí se traducen para que el error se vea.
+     *
+     * @param  array<string, string>  $map
+     */
+    private function failWith(ValidationException $e, array $map = []): void
+    {
+        $errors = [];
+
+        foreach ($e->errors() as $key => $messages) {
+            $errors[$map[$key] ?? $key] = $messages;
+        }
+
+        $this->setErrorBag($errors);
+        Flux::toast(variant: 'danger', text: 'Revisa los campos marcados.');
     }
 
     private function resetProductForm(): void
@@ -312,8 +411,7 @@ new #[Title('Inventario')] class extends Component {
         <div class="flex flex-wrap gap-2">
             <flux:button variant="outline" icon="tag" wire:click="openCategory">Categorías</flux:button>
             <flux:button variant="outline" icon="plus" wire:click="openCreate">Nuevo Producto</flux:button>
-            {{-- El módulo de compras aún no existe: el botón queda visible pero deshabilitado. --}}
-            <flux:button variant="primary" icon="shopping-cart" disabled title="Disponible en una fase próxima">Registrar Compra</flux:button>
+            <flux:button variant="primary" icon="shopping-cart" :href="route('pos')" wire:navigate>Registrar Compra</flux:button>
         </div>
     </header>
 
@@ -350,8 +448,8 @@ new #[Title('Inventario')] class extends Component {
 
     {{-- Filtros: segmented control de categorías + buscador + orden --}}
     <section class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div class="flex items-center gap-2">
-            <div class="flex max-w-full gap-1 overflow-x-auto rounded-full bg-zinc-900/5 p-1 dark:bg-white/10">
+        <div class="flex min-w-0 items-center gap-2">
+            <div class="flex min-w-0 max-w-full gap-1 overflow-x-auto rounded-full bg-zinc-900/5 p-1 dark:bg-white/10">
                 <button
                     type="button"
                     wire:click="selectCategory(null)"
@@ -380,7 +478,7 @@ new #[Title('Inventario')] class extends Component {
             <flux:icon.loading wire:loading wire:target="selectCategory" class="size-5 shrink-0 text-agape dark:text-agape-dark" />
         </div>
 
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center xl:shrink-0">
             <flux:icon.loading wire:loading wire:target="search,sort" class="size-5 shrink-0 text-agape dark:text-agape-dark" />
             <flux:input
                 wire:model.live.debounce.300ms="search"
@@ -459,8 +557,7 @@ new #[Title('Inventario')] class extends Component {
                                         size="sm"
                                         variant="ghost"
                                         icon="trash"
-                                        wire:click="deleteProduct({{ $product->id }})"
-                                        wire:confirm="¿Eliminar {{ $product->name }}? Las ventas anteriores conservarán su historial."
+                                        wire:click="openDelete({{ $product->id }})"
                                         aria-label="Eliminar"
                                     />
                                 </div>
@@ -484,7 +581,27 @@ new #[Title('Inventario')] class extends Component {
 
     {{-- Modal: crear / editar producto --}}
     <flux:modal name="product-form" class="w-full max-w-lg">
-        <form wire:submit="saveProduct" class="flex flex-col gap-5">
+        {{--
+            La ganancia se calcula con Alpine en el navegador, no en el servidor. Así, escribir
+            no dispara peticiones ni re-renderiza el formulario, y ningún campo pierde lo escrito.
+            El wire:key reinicia el estado de Alpine al pasar de crear a editar.
+        --}}
+        <form
+            wire:submit="saveProduct"
+            wire:key="product-form-{{ $editingId ?? 'new' }}"
+            x-data="{
+                major: {{ (float) $major_price }},
+                detal: {{ (float) $detal_price }},
+                refresh(event) {
+                    if (event.target.name === 'major_price') this.major = parseFloat(event.target.value) || 0
+                    if (event.target.name === 'detal_price') this.detal = parseFloat(event.target.value) || 0
+                },
+                get amount() { return ((this.detal || 0) - (this.major || 0)).toFixed(2) },
+                get percentage() { return this.major > 0 ? Math.round(((this.detal - this.major) / this.major) * 100) : 0 },
+            }"
+            x-on:input="refresh($event)"
+            class="flex flex-col gap-5"
+        >
             <div>
                 <flux:heading size="xl" class="font-display">{{ $editingId ? 'Editar producto' : 'Nuevo producto' }}</flux:heading>
                 <flux:subheading>El costo mayor es lo que pagas al proveedor. El precio detal es lo que cobras.</flux:subheading>
@@ -492,20 +609,23 @@ new #[Title('Inventario')] class extends Component {
 
             <flux:input wire:model="name" label="Nombre" placeholder="Ej. Crema hidratante 50 ml" />
 
-            <flux:select wire:model="category_id" label="Categoría" placeholder="Selecciona una categoría">
+            {{-- Marcador propio, habilitado y con value="": el de Flux es disabled y el navegador
+                 terminaría mostrando la primera categoría como si estuviera elegida. --}}
+            <flux:select wire:model="category_id" label="Categoría">
+                <option value="" class="placeholder">Selecciona una categoría</option>
                 @foreach ($this->categories as $category)
-                    <flux:select.option :value="$category->id" wire:key="form-cat-{{ $category->id }}">{{ $category->name }}</flux:select.option>
+                    <flux:select.option :value="$category->id">{{ $category->name }}</flux:select.option>
                 @endforeach
             </flux:select>
 
             <div class="grid grid-cols-2 gap-4">
-                <flux:input wire:model.live.debounce.300ms="major_price" type="number" step="0.01" min="0" label="Costo mayor" prefix="$" />
-                <flux:input wire:model.live.debounce.300ms="detal_price" type="number" step="0.01" min="0" label="Precio detal" prefix="$" />
+                <flux:input wire:model="major_price" type="number" step="0.01" min="0" label="Costo mayor" prefix="$" />
+                <flux:input wire:model="detal_price" type="number" step="0.01" min="0" label="Precio detal" prefix="$" />
             </div>
 
             <div class="flex items-center justify-between rounded-xl bg-profit-bg px-4 py-3 text-profit-text dark:bg-emerald-500/15 dark:text-emerald-300">
                 <span class="text-sm font-semibold">Ganancia por unidad</span>
-                <span class="font-bold tnum">+${{ number_format($this->preview['amount'], 2) }} ({{ number_format($this->preview['percentage'], 0) }}%)</span>
+                <span class="font-bold tnum" x-text="'+$' + amount + ' (' + percentage + '%)'"></span>
             </div>
 
             @unless ($editingId)
@@ -573,22 +693,99 @@ new #[Title('Inventario')] class extends Component {
         </form>
     </flux:modal>
 
-    {{-- Modal: nueva categoría --}}
-    <flux:modal name="category-form" class="w-full max-w-md">
-        <form wire:submit="saveCategory" class="flex flex-col gap-5">
+    {{-- Modal: confirmar eliminación. Una acción destructiva nunca usa el alert del navegador. --}}
+    <flux:modal name="delete-product" class="w-full max-w-md">
+        <form wire:submit="confirmDelete" class="flex flex-col gap-5">
             <div>
-                <flux:heading size="xl" class="font-display">Nueva categoría</flux:heading>
-                <flux:subheading>Agrupa tus productos para filtrarlos rápido.</flux:subheading>
+                <flux:heading size="xl" class="font-display">Eliminar producto</flux:heading>
+                <flux:subheading>
+                    ¿Seguro que quieres eliminar
+                    <span class="font-semibold text-zinc-900 dark:text-white">{{ $this->deleting?->name }}</span>?
+                </flux:subheading>
             </div>
 
-            <flux:input wire:model="categoryName" label="Nombre" placeholder="Ej. Accesorios" />
-            <flux:textarea wire:model="categoryDescription" label="Descripción (opcional)" rows="2" />
+            <div class="rounded-xl bg-warn-bg px-4 py-3 text-sm text-warn-text dark:bg-amber-500/15 dark:text-amber-300">
+                Es un borrado lógico: sale del inventario, pero las ventas anteriores conservan su historial.
+            </div>
 
             <div class="flex justify-end gap-2">
                 <flux:modal.close>
                     <flux:button variant="ghost">Cancelar</flux:button>
                 </flux:modal.close>
-                <flux:button type="submit" variant="primary">Crear categoría</flux:button>
+                <flux:button type="submit" variant="danger">Eliminar producto</flux:button>
+            </div>
+        </form>
+    </flux:modal>
+
+    {{-- Modal: gestión de categorías (crear, renombrar y eliminar) --}}
+    <flux:modal name="category-form" class="w-full max-w-lg">
+        <div class="flex flex-col gap-5">
+            <div>
+                <flux:heading size="xl" class="font-display">Categorías</flux:heading>
+                <flux:subheading>Agrupa tus productos para filtrarlos rápido.</flux:subheading>
+            </div>
+
+            <form wire:submit="saveCategory" class="flex flex-col gap-3 rounded-xl bg-zinc-900/5 p-4 dark:bg-white/5">
+                <p class="text-xs font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">
+                    {{ $editingCategoryId ? 'Renombrar categoría' : 'Nueva categoría' }}
+                </p>
+
+                <flux:input wire:model="categoryName" label="Nombre" placeholder="Ej. Accesorios" />
+                <flux:textarea wire:model="categoryDescription" label="Descripción (opcional)" rows="2" />
+
+                <div class="flex justify-end gap-2">
+                    @if ($editingCategoryId)
+                        <flux:button type="button" variant="ghost" wire:click="cancelCategoryEdit">Cancelar edición</flux:button>
+                    @endif
+                    <flux:button type="submit" variant="primary">{{ $editingCategoryId ? 'Guardar' : 'Crear categoría' }}</flux:button>
+                </div>
+            </form>
+
+            <div class="flex flex-col divide-y divide-gray-100 dark:divide-white/10">
+                @foreach ($this->categories as $category)
+                    <div wire:key="manage-cat-{{ $category->id }}" class="flex items-center justify-between gap-3 py-2">
+                        <div class="min-w-0">
+                            <p class="truncate text-sm font-semibold text-zinc-900 dark:text-white">{{ $category->name }}</p>
+                            <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ $category->products_count }} productos</p>
+                        </div>
+                        <div class="flex shrink-0 gap-1">
+                            <flux:button size="sm" variant="ghost" icon="pencil-square" wire:click="editCategory({{ $category->id }})" aria-label="Renombrar" />
+                            <flux:button size="sm" variant="ghost" icon="trash" wire:click="askDeleteCategory({{ $category->id }})" aria-label="Eliminar" />
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+
+            <div class="flex justify-end">
+                <flux:modal.close>
+                    <flux:button variant="ghost">Cerrar</flux:button>
+                </flux:modal.close>
+            </div>
+        </div>
+    </flux:modal>
+
+    {{-- Modal: confirmar eliminación de categoría --}}
+    <flux:modal name="delete-category" class="w-full max-w-md">
+        <form wire:submit="confirmDeleteCategory" class="flex flex-col gap-5">
+            <div>
+                <flux:heading size="xl" class="font-display">Eliminar categoría</flux:heading>
+                <flux:subheading>
+                    ¿Seguro que quieres eliminar
+                    <span class="font-semibold text-zinc-900 dark:text-white">{{ $this->deletingCategory?->name }}</span>?
+                </flux:subheading>
+            </div>
+
+            @if ($deleteCategoryError)
+                <div class="rounded-xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                    {{ $deleteCategoryError }}
+                </div>
+            @endif
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button type="button" variant="ghost">Cancelar</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="danger">Eliminar categoría</flux:button>
             </div>
         </form>
     </flux:modal>

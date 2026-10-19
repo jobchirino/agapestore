@@ -209,6 +209,13 @@ The design system maintains a unified roundedness level of `2`. In practice:
 - Inactive: 1.5px border in `#D1D5DB`.
 - Active: Solid `#BE185D` fill with `#FFFFFF` crisp optical checkmark / center dot.
 
+### Feedback & Notifications
+
+- **Success (default)**: Flux toast, `variant="success"`, top-right, auto-dismissing. This is the standard for every successful action (create, update, delete, stock adjustment). Do not invent inline success banners.
+- **Errors**: never silent. Show the message next to the offending field with `<flux:error>` and fire a `variant="danger"` toast so the failure is noticed even if the field is out of view.
+- Loading feedback is subtle: dim the affected surface (`opacity-60` with a transition) and show a small spinner near the action. Never block the whole screen.
+- **Destructive actions** (delete, discard) always require a confirmation modal with a `variant="danger"` button. Never `wire:confirm` or the browser's native dialog.
+
 ### Data Tables & Lists
 - Table headers set in 11px Manrope uppercase with `letterSpacing: 0.06em` and subtle `#6B7280` coloring.
 - Row heights pegged at 48px with 1px border-bottom divider in `rgba(243, 244, 246, 1)`.

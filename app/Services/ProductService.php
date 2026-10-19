@@ -17,7 +17,7 @@ class ProductService
      */
     public function createProduct(array $data, ?UploadedFile $image = null): Product
     {
-        $validated = Validator::make($data, $this->rules())->validate();
+        $validated = Validator::make($data, $this->rules(), $this->messages())->validate();
 
         if ($image !== null) {
             $validated['img_route'] = $image->store('products', 'public');
@@ -36,6 +36,7 @@ class ProductService
         $validated = Validator::make(
             Arr::except($data, ['total_stock']),
             $this->rules(sometimes: true),
+            $this->messages(),
         )->validate();
 
         $oldImage = $product->img_route;
@@ -81,6 +82,28 @@ class ProductService
 
             return $locked;
         });
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function messages(): array
+    {
+        return [
+            'category_id.required' => 'Selecciona una categoría.',
+            'category_id.integer' => 'La categoría seleccionada no es válida.',
+            'category_id.exists' => 'La categoría seleccionada no existe.',
+            'name.required' => 'El nombre del producto es obligatorio.',
+            'name.max' => 'El nombre no puede tener más de 255 caracteres.',
+            'detal_price.required' => 'El precio detal es obligatorio.',
+            'detal_price.numeric' => 'El precio detal debe ser un número.',
+            'detal_price.min' => 'El precio detal no puede ser negativo.',
+            'major_price.required' => 'El costo mayor es obligatorio.',
+            'major_price.numeric' => 'El costo mayor debe ser un número.',
+            'major_price.min' => 'El costo mayor no puede ser negativo.',
+            'total_stock.integer' => 'El stock debe ser un número entero.',
+            'total_stock.min' => 'El stock no puede ser negativo.',
+        ];
     }
 
     /**

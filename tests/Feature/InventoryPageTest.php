@@ -132,6 +132,23 @@ class InventoryPageTest extends TestCase
         Storage::disk('public')->assertExists($product->img_route);
     }
 
+    public function test_created_stock_matches_the_entered_value(): void
+    {
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::inventory')
+            ->call('openCreate')
+            ->set('name', 'Producto con veinte')
+            ->set('category_id', $this->perfumes->id)
+            ->set('detal_price', '10')
+            ->set('major_price', '6')
+            ->set('total_stock', 20)
+            ->call('saveProduct')
+            ->assertHasNoErrors();
+
+        $this->assertSame(20, Product::query()->where('name', 'Producto con veinte')->value('total_stock'));
+    }
+
     public function test_wholesale_cost_is_required_when_creating(): void
     {
         $this->actingAs($this->user);
@@ -182,7 +199,8 @@ class InventoryPageTest extends TestCase
             ->set('adjustKind', 'out')
             ->set('adjustQuantity', 9)
             ->call('saveAdjustment')
-            ->assertHasErrors(['quantity']);
+            ->assertHasErrors(['adjustQuantity'])
+            ->assertSee('No se puede dejar el stock');
 
         $this->assertSame(5, $product->fresh()->total_stock);
 
@@ -196,13 +214,25 @@ class InventoryPageTest extends TestCase
         $this->assertSame(8, $product->fresh()->total_stock);
     }
 
-    public function test_deleting_a_product_is_a_soft_delete(): void
+    public function test_opening_the_delete_modal_does_not_delete_until_confirmed(): void
     {
-        $product = Product::factory()->for($this->perfumes)->create();
+        $product = Product::factory()->for($this->perfumes)->create(['name' => 'Crema a borrar']);
 
         $this->actingAs($this->user);
 
-        Livewire::test('pages::inventory')->call('deleteProduct', $product->id);
+        Livewire::test('pages::inventory')
+            ->call('openDelete', $product->id)
+            ->assertSet('deletingId', $product->id)
+            ->assertSee('¿Seguro que quieres eliminar')
+            ->assertSee('Crema a borrar');
+
+        // Todavía existe: nada se borra sin confirmar.
+        $this->assertNull($product->fresh()->deleted_at);
+
+        Livewire::test('pages::inventory')
+            ->call('openDelete', $product->id)
+            ->call('confirmDelete')
+            ->assertSet('deletingId', null);
 
         $this->assertSoftDeleted('products', ['id' => $product->id]);
     }
@@ -220,14 +250,156 @@ class InventoryPageTest extends TestCase
         $this->assertDatabaseHas('categories', ['name' => 'Accesorios']);
     }
 
-    public function test_duplicate_category_name_is_rejected(): void
+    public function test_duplicate_category_name_shows_a_visible_error_exactly_once(): void
+    {
+        $this->actingAs($this->user);
+
+        $html = Livewire::test('pages::inventory')
+            ->call('openCategory')
+            ->set('categoryName', 'Perfumes')
+            ->call('saveCategory')
+            ->assertHasErrors(['categoryName'])
+            ->html();
+
+        // Flux muestra el error por su cuenta; si se agrega otro <flux:error> se duplica.
+        $this->assertSame(1, substr_count($html, 'Ya existe una categoría con ese nombre'));
+        $this->assertDatabaseCount('categories', 2);
+    }
+
+    public function test_category_uniqueness_ignores_case_accents_and_spacing(): void
+    {
+        $this->actingAs($this->user);
+
+        foreach (['PERFÚMES', 'perfumes', '  Perfumes  ', 'Pérfumes'] as $variant) {
+            Livewire::test('pages::inventory')
+                ->call('openCategory')
+                ->set('categoryName', $variant)
+                ->call('saveCategory')
+                ->assertHasErrors(['categoryName']);
+        }
+
+        Livewire::test('pages::inventory')
+            ->call('openCategory')
+            ->set('categoryName', 'Accesorios')
+            ->call('saveCategory')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseCount('categories', 3);
+    }
+
+    public function test_new_product_modal_shows_a_real_placeholder_instead_of_a_category(): void
+    {
+        $this->actingAs($this->user);
+
+        $html = Livewire::test('pages::inventory')
+            ->call('openCreate')
+            ->assertSet('category_id', '')
+            ->html();
+
+        $dom = new \DOMDocument;
+        libxml_use_internal_errors(true);
+        $dom->loadHTML($html);
+        libxml_clear_errors();
+
+        $select = null;
+
+        foreach ($dom->getElementsByTagName('select') as $candidate) {
+            if ($candidate->getAttribute('name') === 'category_id') {
+                $select = $candidate;
+                break;
+            }
+        }
+
+        $this->assertNotNull($select, 'No se encontró el select de categorías.');
+
+        $firstOption = $select->getElementsByTagName('option')->item(0);
+
+        $this->assertSame('', $firstOption->getAttribute('value'));
+        $this->assertFalse($firstOption->hasAttribute('disabled'), 'El marcador no debe estar deshabilitado.');
+    }
+
+    public function test_creating_without_choosing_a_category_shows_an_error(): void
     {
         $this->actingAs($this->user);
 
         Livewire::test('pages::inventory')
-            ->call('openCategory')
+            ->call('openCreate')
+            ->set('name', 'Sin categoría')
+            ->set('detal_price', '10')
+            ->set('major_price', '6')
+            ->call('saveProduct')
+            ->assertHasErrors(['category_id'])
+            ->assertSee('Selecciona una categoría.');
+
+        $this->assertDatabaseMissing('products', ['name' => 'Sin categoría']);
+    }
+
+    public function test_category_can_be_renamed(): void
+    {
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::inventory')
+            ->call('editCategory', $this->carteras->id)
+            ->assertSet('categoryName', 'Carteras')
+            ->set('categoryName', 'Bolsos')
+            ->call('saveCategory')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('categories', ['id' => $this->carteras->id, 'name' => 'Bolsos']);
+    }
+
+    public function test_renaming_a_category_to_an_existing_name_fails(): void
+    {
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::inventory')
+            ->call('editCategory', $this->carteras->id)
             ->set('categoryName', 'Perfumes')
             ->call('saveCategory')
-            ->assertHasErrors(['name']);
+            ->assertHasErrors(['categoryName']);
+
+        $this->assertDatabaseHas('categories', ['id' => $this->carteras->id, 'name' => 'Carteras']);
+    }
+
+    public function test_empty_category_can_be_deleted_from_the_management_modal(): void
+    {
+        $this->actingAs($this->user);
+        $category = Category::factory()->create(['name' => 'Temporal']);
+
+        Livewire::test('pages::inventory')
+            ->call('askDeleteCategory', $category->id)
+            ->call('confirmDeleteCategory');
+
+        $this->assertDatabaseMissing('categories', ['id' => $category->id]);
+    }
+
+    public function test_category_with_products_shows_the_reason_when_deletion_fails(): void
+    {
+        $this->actingAs($this->user);
+        Product::factory()->for($this->carteras)->create();
+
+        Livewire::test('pages::inventory')
+            ->call('askDeleteCategory', $this->carteras->id)
+            ->call('confirmDeleteCategory')
+            ->assertSee('no se puede eliminar');
+
+        $this->assertDatabaseHas('categories', ['id' => $this->carteras->id]);
+    }
+
+    public function test_pagination_active_page_keeps_the_same_shape_and_only_changes_color(): void
+    {
+        Product::factory()->for($this->perfumes)->count(12)->create();
+
+        $this->actingAs($this->user);
+
+        $html = Livewire::test('pages::inventory')->html();
+        $position = strpos($html, 'aria-current="page"');
+
+        $this->assertNotFalse($position);
+
+        $segment = substr($html, (int) $position, 400);
+
+        $this->assertStringNotContainsString('rounded-full', $segment);
+        $this->assertStringContainsString('bg-agape', $segment);
     }
 }

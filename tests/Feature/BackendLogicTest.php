@@ -335,6 +335,16 @@ class BackendLogicTest extends TestCase
         $service->createCategory(['name' => 'Perfumes']);
     }
 
+    public function test_category_slug_is_normalized_for_uniqueness(): void
+    {
+        $category = app(CategoryService::class)->createCategory(['name' => 'Bisutería Premium']);
+
+        $this->assertSame('bisuteria-premium', $category->slug);
+
+        $this->expectException(ValidationException::class);
+        app(CategoryService::class)->createCategory(['name' => 'bisuteria premium']);
+    }
+
     public function test_category_with_products_cannot_be_deleted_even_if_the_product_is_trashed(): void
     {
         $service = app(CategoryService::class);

@@ -1,0 +1,312 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Category;
+use App\Models\Client;
+use App\Models\Product;
+use App\Models\Sale;
+use App\Models\SaleProduct;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
+use Tests\TestCase;
+
+class PosPageTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private User $user;
+
+    private Category $category;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->user = User::factory()->create();
+        $this->category = Category::factory()->create(['name' => 'Perfumes']);
+    }
+
+    private function product(array $attributes = []): Product
+    {
+        return Product::factory()->for($this->category)->create(array_merge([
+            'detal_price' => 25.00,
+            'major_price' => 18.50,
+            'total_stock' => 10,
+        ], $attributes));
+    }
+
+    public function test_guests_are_redirected_to_login(): void
+    {
+        $this->get(route('pos'))->assertRedirect(route('login'));
+    }
+
+    public function test_authenticated_users_see_the_pos_page(): void
+    {
+        $this->actingAs($this->user)
+            ->get(route('pos'))
+            ->assertOk()
+            ->assertSee('Registrar Compra');
+    }
+
+    public function test_the_search_filters_products_by_name(): void
+    {
+        $this->product(['name' => 'Perfume Floral']);
+        $this->product(['name' => 'Bolso Ejecutivo']);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->set('productSearch', 'floral')
+            ->assertSee('Perfume Floral')
+            ->assertDontSee('Bolso Ejecutivo');
+    }
+
+    public function test_out_of_stock_products_show_as_sold_out_and_cannot_be_added(): void
+    {
+        $product = $this->product(['name' => 'Agotado Test', 'total_stock' => 0]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->set('productSearch', 'agotado')
+            ->assertSee('Agotado')
+            ->call('addProduct', $product->id)
+            ->assertSet('cart', []);
+    }
+
+    public function test_clicking_a_product_repeatedly_increments_the_quantity(): void
+    {
+        $product = $this->product(['total_stock' => 5]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->assertSet("cart.{$product->id}", 1)
+            ->assertSee('1 en carrito')
+            ->call('addProduct', $product->id)
+            ->assertSet("cart.{$product->id}", 2)
+            ->assertSee('2 en carrito');
+    }
+
+    public function test_adding_is_capped_at_the_available_stock(): void
+    {
+        $product = $this->product(['total_stock' => 2]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('addProduct', $product->id)
+            ->call('addProduct', $product->id)
+            ->assertSet("cart.{$product->id}", 2);
+    }
+
+    public function test_decrement_stops_at_one_and_remove_line_clears_it(): void
+    {
+        $product = $this->product(['total_stock' => 5]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('addProduct', $product->id)
+            ->call('decrement', $product->id)
+            ->assertSet("cart.{$product->id}", 1)
+            ->call('decrement', $product->id)
+            ->assertSet("cart.{$product->id}", 1) // en 1 ya no baja
+            ->call('removeLine', $product->id)
+            ->assertSet('cart', []);
+    }
+
+    public function test_summary_calculates_total_and_estimated_profit(): void
+    {
+        $perfume = $this->product(['detal_price' => 25.00, 'major_price' => 18.50]);
+        $wallet = $this->product(['detal_price' => 40.00, 'major_price' => 22.00]);
+
+        $this->actingAs($this->user);
+
+        // 2 x 25.00 + 1 x 40.00 = 90.00; ganancia = 2 x 6.50 + 1 x 18.00 = 31.00
+        $component = Livewire::test('pages::pos')
+            ->call('addProduct', $perfume->id)
+            ->call('addProduct', $perfume->id)
+            ->call('addProduct', $wallet->id);
+
+        $this->assertSame('90.00', $component->instance()->summary()['total']);
+        $this->assertSame('31.00', $component->instance()->summary()['profit']);
+    }
+
+    public function test_confirm_sale_deducts_stock_and_freezes_the_cost(): void
+    {
+        $product = $this->product(['detal_price' => 25.00, 'major_price' => 18.50, 'total_stock' => 10]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('addProduct', $product->id)
+            ->call('confirmSale')
+            ->assertSet('cart', []);
+
+        $sale = Sale::query()->firstOrFail();
+
+        $this->assertSame('50.00', $sale->total);
+        $this->assertSame(8, $product->fresh()->total_stock);
+
+        $line = SaleProduct::query()->where('sale_id', $sale->id)->firstOrFail();
+
+        $this->assertSame('25.00', $line->unit_price);
+        $this->assertSame('18.50', $line->unit_cost);
+    }
+
+    public function test_confirm_when_stock_changed_shows_an_error_and_keeps_the_cart(): void
+    {
+        $product = $this->product(['total_stock' => 1]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            // Otra venta se lleva el stock por detrás.
+            ->tap(function () use ($product): void {
+                $product->update(['total_stock' => 0]);
+            })
+            ->call('confirmSale')
+            ->assertSet("cart.{$product->id}", 1) // el carrito se conserva
+            ->assertSee('Stock insuficiente');
+
+        $this->assertSame(0, Sale::query()->count());
+    }
+
+    public function test_confirm_with_empty_cart_shows_an_error(): void
+    {
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('confirmSale')
+            ->assertSee('Agrega al menos un producto');
+
+        $this->assertSame(0, Sale::query()->count());
+    }
+
+    public function test_payment_proof_is_uploaded_and_saved_with_the_sale(): void
+    {
+        Storage::fake('public');
+
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->set('payment_proof', UploadedFile::fake()->image('comprobante.jpg'))
+            ->call('confirmSale')
+            ->assertSet('payment_proof', null);
+
+        $sale = Sale::query()->firstOrFail();
+
+        $this->assertNotNull($sale->payment_proof_path);
+        Storage::disk('public')->assertExists($sale->payment_proof_path);
+    }
+
+    public function test_casual_client_sale_and_custom_past_date_are_saved(): void
+    {
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->set('date', '2026-10-10T09:30')
+            ->call('confirmSale');
+
+        $sale = Sale::query()->firstOrFail();
+
+        $this->assertNull($sale->client_id);
+        $this->assertSame('2026-10-10 09:30', $sale->date->format('Y-m-d H:i'));
+    }
+
+    public function test_future_dates_are_rejected(): void
+    {
+        Carbon::setTestNow('2026-10-18 10:00:00');
+
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->set('date', '2026-10-19T09:00')
+            ->call('confirmSale')
+            ->assertHasErrors(['date']);
+
+        $this->assertSame(0, Sale::query()->count());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_selecting_an_existing_client_attaches_it_to_the_sale(): void
+    {
+        $client = Client::factory()->create(['name' => 'María Pérez']);
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->set('clientSearch', 'maría')
+            ->assertSee('María Pérez')
+            ->call('selectClient', $client->id)
+            ->assertSet('client_id', $client->id)
+            ->call('addProduct', $product->id)
+            ->call('confirmSale');
+
+        $this->assertSame($client->id, Sale::query()->firstOrFail()->client_id);
+    }
+
+    public function test_quick_client_component_creates_a_client_and_dispatches_the_event(): void
+    {
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos.client-form')
+            ->set('name', 'Juan López')
+            ->set('phone', '0424-1112233')
+            ->call('save')
+            ->assertDispatched('client-created');
+
+        $this->assertDatabaseHas('clients', ['name' => 'Juan López', 'phone' => '0424-1112233']);
+    }
+
+    public function test_pos_listens_for_the_created_client_without_losing_the_cart(): void
+    {
+        $product = $this->product();
+        $client = Client::factory()->create();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->dispatch('client-created', clientId: $client->id)
+            ->assertSet('client_id', $client->id)
+            ->assertSet("cart.{$product->id}", 1); // el carrito sigue intacto
+    }
+
+    public function test_success_panel_shows_the_sale_and_can_start_another_one(): void
+    {
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('confirmSale')
+            ->assertSee('VENTA REGISTRADA')
+            ->assertSee('Ganancia real')
+            ->call('startNewSale')
+            ->assertSet('lastSale', null);
+    }
+}
