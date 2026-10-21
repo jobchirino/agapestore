@@ -128,6 +128,94 @@ class BackendLogicTest extends TestCase
         $this->assertSame(0, SaleProduct::query()->count());
     }
 
+    public function test_credit_sale_stores_the_initial_payment_and_derived_balance(): void
+    {
+        $product = Product::factory()->create(['detal_price' => 50.00, 'major_price' => 30.00, 'total_stock' => 5]);
+
+        $sale = app(SaleService::class)->createSale(
+            [
+                'user_id' => $this->user->id,
+                'payment_method' => 'efectivo',
+                'payment_type' => 'credito',
+                'initial_payment' => '20',
+            ],
+            [['product_id' => $product->id, 'quantity' => 1]],
+        );
+
+        $this->assertSame('20.00', $sale->initial_payment);
+        $this->assertSame('30.00', $sale->balanceDue());
+    }
+
+    public function test_initial_payment_cannot_exceed_the_sale_total(): void
+    {
+        $product = Product::factory()->create(['detal_price' => 10.00, 'total_stock' => 5]);
+
+        try {
+            app(SaleService::class)->createSale(
+                [
+                    'user_id' => $this->user->id,
+                    'payment_method' => 'efectivo',
+                    'payment_type' => 'credito',
+                    'initial_payment' => '25',
+                ],
+                [['product_id' => $product->id, 'quantity' => 1]],
+            );
+
+            $this->fail('Expected ValidationException was not thrown.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('no puede superar el total', $e->getMessage());
+        }
+
+        $this->assertSame(0, Sale::query()->count());
+        $this->assertSame(5, $product->fresh()->total_stock);
+    }
+
+    public function test_cash_sale_cannot_have_an_initial_payment(): void
+    {
+        $product = Product::factory()->create(['detal_price' => 10.00, 'total_stock' => 5]);
+
+        try {
+            app(SaleService::class)->createSale(
+                [
+                    'user_id' => $this->user->id,
+                    'payment_method' => 'efectivo',
+                    'payment_type' => 'contado',
+                    'initial_payment' => '5',
+                ],
+                [['product_id' => $product->id, 'quantity' => 1]],
+            );
+
+            $this->fail('Expected ValidationException was not thrown.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('no puede tener inicial', $e->getMessage());
+        }
+
+        $this->assertSame(0, Sale::query()->count());
+    }
+
+    public function test_negative_initial_payment_is_rejected(): void
+    {
+        $product = Product::factory()->create(['detal_price' => 10.00, 'total_stock' => 5]);
+
+        try {
+            app(SaleService::class)->createSale(
+                [
+                    'user_id' => $this->user->id,
+                    'payment_method' => 'efectivo',
+                    'payment_type' => 'credito',
+                    'initial_payment' => '-5',
+                ],
+                [['product_id' => $product->id, 'quantity' => 1]],
+            );
+
+            $this->fail('Expected ValidationException was not thrown.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('no puede ser negativa', $e->getMessage());
+        }
+
+        $this->assertSame(0, Sale::query()->count());
+    }
+
     public function test_quantity_below_one_is_rejected(): void
     {
         $product = Product::factory()->create(['total_stock' => 10]);

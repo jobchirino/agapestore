@@ -21,7 +21,7 @@ class SaleService
      * Every line is sold at the product's detal_price and stores its current major_price as unit_cost.
      * Clients never choose the price.
      *
-     * @param  array{client_id?: int|null, user_id: int, date?: Carbon|string|null, payment_method: string, payment_type?: string, payment_proof_path?: string|null}  $saleData
+     * @param  array{client_id?: int|null, user_id: int, date?: Carbon|string|null, payment_method: string, payment_type?: string, initial_payment?: string|int|float|null, payment_proof_path?: string|null}  $saleData
      * @param  list<array{product_id: int, quantity: int}>  $items
      */
     public function createSale(array $saleData, array $items, ?UploadedFile $paymentProof = null): Sale
@@ -29,6 +29,22 @@ class SaleService
         if ($items === []) {
             throw ValidationException::withMessages([
                 'items' => 'La venta debe tener al menos un producto.',
+            ]);
+        }
+
+        // La inicial solo existe en ventas a crédito. Se rechaza explícitamente si llega
+        // con una venta de contado, aunque la interfaz no permita enviarla.
+        $initialCents = Money::toCents($saleData['initial_payment'] ?? 0);
+
+        if ($initialCents < 0) {
+            throw ValidationException::withMessages([
+                'initial_payment' => 'La inicial no puede ser negativa.',
+            ]);
+        }
+
+        if ($initialCents > 0 && ($saleData['payment_type'] ?? 'contado') === 'contado') {
+            throw ValidationException::withMessages([
+                'initial_payment' => 'Una venta de contado no puede tener inicial.',
             ]);
         }
 
@@ -44,7 +60,7 @@ class SaleService
         }
 
         try {
-            return DB::transaction(function () use ($saleData, $items, $proofPath): Sale {
+            return DB::transaction(function () use ($saleData, $items, $proofPath, $initialCents): Sale {
                 $lines = [];
                 $totalCents = 0;
 
@@ -91,10 +107,17 @@ class SaleService
                     $lines[] = $line;
                 }
 
+                if ($initialCents > $totalCents) {
+                    throw ValidationException::withMessages([
+                        'initial_payment' => 'La inicial ('.Money::fromCents($initialCents).') no puede superar el total de la venta ('.Money::fromCents($totalCents).').',
+                    ]);
+                }
+
                 $sale = Sale::create([
                     'client_id' => $saleData['client_id'] ?? null,
                     'user_id' => $saleData['user_id'],
                     'total' => Money::fromCents($totalCents),
+                    'initial_payment' => Money::fromCents($initialCents),
                     'date' => $saleData['date'] ?? now(),
                     'payment_method' => $saleData['payment_method'],
                     'payment_type' => $saleData['payment_type'] ?? 'contado',

@@ -12,6 +12,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Session;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -26,22 +27,43 @@ new #[Title('Registrar Compra')] class extends Component {
      * con una sola query (whereIn) y se arman las líneas. Así el precio y el stock que se ven
      * son siempre los de la base, y el total mostrado coincide con el que cobra SaleService.
      *
+     * `#[Session]` guarda el carrito en la sesión: si sales de la pantalla y vuelves, sigue ahí.
+     * Caduca a las 8 horas (ver mount()).
+     *
      * @var array<int, int>
      */
+    #[Session]
     public array $cart = [];
+
+    // Cuántas unidades se agregan al hacer clic en un producto del buscador (texto por si lo vacían).
+    public string $quickQuantity = '1';
 
     // Buscador de productos (reactivo, con debounce).
     public string $productSearch = '';
 
     // Comprador.
     public string $clientSearch = '';
+
+    #[Session]
     public ?int $client_id = null;
 
     // Pago.
+    #[Session]
     public string $payment_method = 'pago_movil';
+
+    #[Session]
     public string $payment_type = 'contado';
+
+    // Inicial/abono de una venta a crédito. En contado siempre es "0".
+    #[Session]
+    public string $initial_payment = '0';
+
     public string $date = '';
     public $payment_proof = null;
+
+    // Marca de tiempo del último cambio del carrito, para descartar borradores muy viejos.
+    #[Session]
+    public ?int $cartSavedAt = null;
 
     // Error general del carrito (stock insuficiente, producto borrado, carrito vacío).
     public ?string $cartError = null;
@@ -51,6 +73,13 @@ new #[Title('Registrar Compra')] class extends Component {
 
     public function mount(): void
     {
+        // El borrador dura 8 horas. Pasado ese tiempo se descarta solo.
+        $ttl = 8 * 60 * 60;
+
+        if ($this->cart !== [] && $this->cartSavedAt !== null && ($this->cartSavedAt + $ttl) < now()->timestamp) {
+            $this->reset(['cart', 'client_id', 'cartSavedAt']);
+        }
+
         $this->date = now()->format('Y-m-d\TH:i');
     }
 
@@ -123,7 +152,7 @@ new #[Title('Registrar Compra')] class extends Component {
     /**
      * Total y ganancia estimada, calculados en centavos para no arrastrar errores de decimales.
      *
-     * @return array{total:string,profit:string,percentage:float}
+     * @return array{total:string,profit:string,percentage:float,balance:string}
      */
     #[Computed]
     public function summary(): array
@@ -145,6 +174,7 @@ new #[Title('Registrar Compra')] class extends Component {
             'total' => Money::fromCents($totalCents),
             'profit' => Money::fromCents($profitCents),
             'percentage' => $costCents > 0 ? round($profitCents / $costCents * 100, 0) : 0.0,
+            'balance' => Money::fromCents(max(0, $totalCents - Money::toCents($this->initial_payment))),
         ];
     }
 
@@ -169,19 +199,34 @@ new #[Title('Registrar Compra')] class extends Component {
 
     // ---------------------------------------------------------------- Carrito
 
+    /**
+     * Marca el borrador como recién usado (para la caducidad de 8 horas).
+     */
+    private function touchCart(): void
+    {
+        $this->cartSavedAt = now()->timestamp;
+    }
+
+    public function clearCart(): void
+    {
+        $this->reset(['cart', 'client_id', 'cartSavedAt']);
+        $this->cartError = null;
+
+        Flux::toast(variant: 'success', text: 'Carrito vaciado.');
+    }
+
+    /**
+     * Agrega al carrito la cantidad escrita en "Cantidad a agregar".
+     * El clic es el paso deliberado: un número mal tecleado no entra solo.
+     */
     public function addProduct(int $id): void
     {
         $product = Product::query()->findOrFail($id);
-
-        if ($product->total_stock < 1) {
-            Flux::toast(variant: 'danger', text: "{$product->name} está agotado.");
-
-            return;
-        }
-
+        $wanted = max(1, (int) $this->quickQuantity);
         $current = $this->cart[$id] ?? 0;
+        $available = $product->total_stock - $current;
 
-        if ($current >= $product->total_stock) {
+        if ($available < 1) {
             Flux::toast(
                 variant: 'danger',
                 text: "No hay más stock de {$product->name}. Disponible: {$product->total_stock}.",
@@ -190,8 +235,39 @@ new #[Title('Registrar Compra')] class extends Component {
             return;
         }
 
-        $this->cart[$id] = $current + 1;
+        $added = min($wanted, $available);
+
+        $this->cart[$id] = $current + $added;
         $this->cartError = null;
+        $this->touchCart();
+
+        // Se reinicia a 1 para que el siguiente producto no se agregue por error en bloque.
+        $this->quickQuantity = '1';
+
+        if ($added < $wanted) {
+            Flux::toast(
+                variant: 'danger',
+                text: "Solo se agregaron {$added} de {$wanted}: hay {$product->total_stock} en stock.",
+            );
+        }
+    }
+
+    /**
+     * Suma exactamente una unidad (botón + de la línea del carrito).
+     */
+    public function increment(int $id): void
+    {
+        $product = Product::query()->findOrFail($id);
+        $current = $this->cart[$id] ?? 0;
+
+        if ($current >= $product->total_stock) {
+            Flux::toast(variant: 'danger', text: "No hay más stock de {$product->name}.");
+
+            return;
+        }
+
+        $this->cart[$id] = $current + 1;
+        $this->touchCart();
     }
 
     public function decrement(int $id): void
@@ -202,11 +278,13 @@ new #[Title('Registrar Compra')] class extends Component {
         }
 
         $this->cart[$id]--;
+        $this->touchCart();
     }
 
     public function removeLine(int $id): void
     {
         unset($this->cart[$id]);
+        $this->touchCart();
     }
 
     // ---------------------------------------------------------------- Comprador
@@ -250,6 +328,11 @@ new #[Title('Registrar Compra')] class extends Component {
     public function selectPaymentType(string $type): void
     {
         $this->payment_type = $type;
+
+        // Al volver a contado no debe quedar una inicial escondida.
+        if ($type === 'contado') {
+            $this->initial_payment = '0';
+        }
     }
 
     public function removeProof(): void
@@ -299,10 +382,19 @@ new #[Title('Registrar Compra')] class extends Component {
                 'date' => $this->date,
                 'payment_method' => $this->payment_method,
                 'payment_type' => $this->payment_type,
+                'initial_payment' => $this->initial_payment,
             ], $items, $this->payment_proof);
         } catch (ValidationException $e) {
-            // El servicio ya explica en español qué producto no tiene stock. El carrito NO se toca.
-            $this->cartError = collect($e->errors())->flatten()->first() ?? 'No se pudo registrar la venta.';
+            $errors = $e->errors();
+
+            if (isset($errors['initial_payment'])) {
+                // Error de la inicial: se muestra bajo el campo, no como error del carrito.
+                $this->setErrorBag(['initial_payment' => $errors['initial_payment']]);
+            } else {
+                // Stock, carrito vacío u otro problema general. El carrito NO se toca.
+                $this->cartError = collect($errors)->flatten()->first() ?? 'No se pudo registrar la venta.';
+            }
+
             Flux::toast(variant: 'danger', text: 'No se pudo registrar la venta.');
 
             return;
@@ -317,11 +409,16 @@ new #[Title('Registrar Compra')] class extends Component {
             'id' => $sale->id,
             'total' => $sale->total,
             'profit' => $sale->totalProfit(),
+            'initial' => $sale->initial_payment,
+            'balance' => $sale->balanceDue(),
+            'type' => $sale->payment_type,
         ];
 
-        $this->reset(['cart', 'payment_proof', 'client_id', 'clientSearch', 'cartError']);
+        $this->reset(['cart', 'payment_proof', 'client_id', 'clientSearch', 'cartError', 'initial_payment']);
+        $this->cartSavedAt = null;
         $this->payment_method = 'pago_movil';
         $this->payment_type = 'contado';
+        $this->quickQuantity = '1';
         $this->date = now()->format('Y-m-d\TH:i');
 
         Flux::toast(variant: 'success', text: 'Venta registrada.');
@@ -352,6 +449,7 @@ new #[Title('Registrar Compra')] class extends Component {
                 },
             ],
             'payment_proof' => ['nullable', 'image', 'max:5120'],
+            'initial_payment' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 
@@ -369,11 +467,19 @@ new #[Title('Registrar Compra')] class extends Component {
             'date.date' => 'La fecha no es válida.',
             'payment_proof.image' => 'El comprobante debe ser una imagen.',
             'payment_proof.max' => 'El comprobante no puede pesar más de 5 MB.',
+            'initial_payment.numeric' => 'La inicial debe ser un número.',
+            'initial_payment.min' => 'La inicial no puede ser negativa.',
         ];
     }
 }; ?>
 
-<div class="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 lg:px-8 lg:py-8">
+<div
+    class="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-6 lg:px-8 lg:py-8"
+    data-has-proof="{{ $payment_proof ? '1' : '0' }}"
+    x-data="{ pendingUrl: null }"
+    {{-- Al navegar fuera con un comprobante cargado, se frena la salida y se avisa. --}}
+    x-on:livewire:navigating.window="if ($el.dataset.hasProof === '1') { $event.preventDefault(); pendingUrl = $event.detail.url; Flux.modal('leave-warning').show() }"
+>
 
     {{-- Encabezado --}}
     <header class="flex flex-col gap-1">
@@ -387,11 +493,23 @@ new #[Title('Registrar Compra')] class extends Component {
         <section class="rounded-2xl border border-emerald-200 bg-profit-bg p-6 dark:border-emerald-500/30 dark:bg-emerald-500/10">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-profit-text dark:text-emerald-300">• VENTA REGISTRADA</p>
             <div class="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div class="flex gap-8">
+                <div class="flex flex-wrap gap-8">
                     <div>
-                        <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Total cobrado</p>
+                        <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Total de la venta</p>
                         <p class="text-3xl font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $lastSale['total'], 2) }}</p>
                     </div>
+
+                    @if ($lastSale['type'] === 'credito')
+                        <div>
+                            <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Inicial recibida</p>
+                            <p class="text-3xl font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $lastSale['initial'], 2) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Saldo pendiente</p>
+                            <p class="text-3xl font-bold tnum text-amber-600 dark:text-amber-300">${{ number_format((float) $lastSale['balance'], 2) }}</p>
+                        </div>
+                    @endif
+
                     <div>
                         <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Ganancia real</p>
                         <p class="text-3xl font-bold tnum text-profit-text dark:text-emerald-300">+${{ number_format((float) $lastSale['profit'], 2) }}</p>
@@ -418,6 +536,19 @@ new #[Title('Registrar Compra')] class extends Component {
                     label="Buscar producto"
                     placeholder="Nombre del producto..."
                 />
+
+                <div class="mt-3 flex items-end gap-3">
+                    <flux:input
+                        wire:model.live.debounce.500ms="quickQuantity"
+                        type="number"
+                        min="1"
+                        label="Cantidad a agregar"
+                        class="w-32"
+                    />
+                    <p class="pb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        Escribe las unidades y haz clic en el producto.
+                    </p>
+                </div>
 
                 <div class="mt-4 flex flex-col gap-2">
                     @forelse ($this->results as $product)
@@ -463,8 +594,12 @@ new #[Title('Registrar Compra')] class extends Component {
 
             {{-- Artículos cargados --}}
             <section class="card-raise rounded-2xl border border-gray-200/60 bg-white dark:border-white/10 dark:bg-panel">
-                <div class="border-b border-gray-100 px-5 py-4 dark:border-white/10">
+                <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-white/10">
                     <h2 class="text-sm font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Artículos cargados</h2>
+
+                    @if ($cart !== [])
+                        <flux:button size="sm" variant="ghost" icon="trash" wire:click="clearCart">Vaciar carrito</flux:button>
+                    @endif
                 </div>
 
                 @if ($cartError)
@@ -505,7 +640,7 @@ new #[Title('Registrar Compra')] class extends Component {
                                     size="sm"
                                     variant="ghost"
                                     icon="plus"
-                                    wire:click="addProduct({{ $line['id'] }})"
+                                    wire:click="increment({{ $line['id'] }})"
                                     :disabled="$line['quantity'] >= $line['stock']"
                                     aria-label="Agregar una unidad"
                                 />
@@ -582,7 +717,9 @@ new #[Title('Registrar Compra')] class extends Component {
 
                 <div>
                     <flux:label class="mb-2">Método de pago</flux:label>
-                    <div class="flex flex-wrap gap-1 rounded-full bg-zinc-900/5 p-1 dark:bg-white/10">
+                    {{-- rounded-2xl: con 5 métodos la fila se parte en dos y un contenedor
+                         rounded-full dejaría las píldoras sobresaliendo por los bordes. --}}
+                    <div class="flex flex-wrap gap-1 rounded-2xl bg-zinc-900/5 p-1.5 dark:bg-white/10">
                         @foreach ($this->paymentMethods() as $value => $label)
                             <button
                                 type="button"
@@ -616,6 +753,23 @@ new #[Title('Registrar Compra')] class extends Component {
                     </div>
                 </div>
 
+                @if ($payment_type === 'credito')
+                    {{-- La inicial solo tiene sentido en crédito; en la vista nunca se envía con contado. --}}
+                    <flux:input
+                        wire:model.live.debounce.500ms="initial_payment"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        label="Inicial / abono"
+                        prefix="$"
+                    />
+
+                    <div class="flex items-center justify-between rounded-xl bg-zinc-900/5 px-4 py-2 dark:bg-white/5">
+                        <span class="text-sm text-zinc-500 dark:text-zinc-400">Saldo pendiente</span>
+                        <span class="font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $this->summary['balance'], 2) }}</span>
+                    </div>
+                @endif
+
                 {{-- .live para mantener la misma cadencia que los buscadores y evitar el bug de
                      campos que pierden lo escrito por un re-render. --}}
                 <flux:input wire:model.live.debounce.500ms="date" type="datetime-local" label="Fecha de la venta" />
@@ -637,13 +791,49 @@ new #[Title('Registrar Compra')] class extends Component {
                         <div class="min-w-0 flex-1 text-xs text-zinc-500 dark:text-zinc-400">Vista previa lista para confirmar.</div>
                         <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="removeProof">Quitar</flux:button>
                     </div>
+
+                    <p class="mt-2 text-xs font-medium text-warn-text dark:text-amber-300">
+                        El comprobante no se guarda al salir de esta pantalla. El carrito sí.
+                    </p>
                 @else
-                    <label class="mt-3 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 bg-white/60 px-4 py-6 text-center transition hover:border-agape dark:border-white/15 dark:bg-white/5 dark:hover:border-agape-dark">
+                    <label
+                        class="mt-3 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 bg-white/60 px-4 py-6 text-center transition hover:border-agape dark:border-white/15 dark:bg-white/5 dark:hover:border-agape-dark"
+                        x-data="{ localError: null, uploading: false }"
+                    >
                         <flux:icon name="arrow-up-tray" class="size-6 text-zinc-400" />
                         <span class="text-sm font-medium text-zinc-600 dark:text-zinc-300">Sube una imagen del comprobante</span>
                         <span class="text-xs text-zinc-400">PNG o JPG, hasta 5 MB</span>
-                        <input type="file" wire:model="payment_proof" accept="image/*" class="sr-only" />
-                        <span wire:loading wire:target="payment_proof" class="text-xs font-semibold text-agape dark:text-agape-dark">Subiendo...</span>
+
+                        {{-- Se valida peso y tipo ANTES de subir: no gastamos 10 MB para recibir un rechazo.
+                             $wire.upload() es la API de Livewire para manejar el archivo manualmente. --}}
+                        <input
+                            type="file"
+                            accept="image/*"
+                            class="sr-only"
+                            x-on:change="
+                                localError = null
+                                const file = $event.target.files[0]
+                                if (! file) return
+                                if (! file.type.startsWith('image/')) {
+                                    localError = 'El archivo debe ser una imagen (PNG o JPG).'
+                                    $event.target.value = ''
+                                    return
+                                }
+                                if (file.size > 5 * 1024 * 1024) {
+                                    localError = 'Tu imagen pesa ' + (file.size / 1024 / 1024).toFixed(1) + ' MB y el máximo es 5 MB. Comprime la foto o elige otra.'
+                                    $event.target.value = ''
+                                    return
+                                }
+                                uploading = true
+                                $wire.upload('payment_proof', file,
+                                    () => { uploading = false; $event.target.value = '' },
+                                    () => { uploading = false; localError = 'No se pudo subir el comprobante. Intenta de nuevo.'; $event.target.value = '' }
+                                )
+                            "
+                        />
+
+                        <span x-show="uploading" x-cloak class="text-xs font-semibold text-agape dark:text-agape-dark">Subiendo...</span>
+                        <span x-show="localError" x-cloak class="text-xs font-medium text-rose-600 dark:text-rose-400" x-text="localError"></span>
                     </label>
                 @endif
 
@@ -683,6 +873,28 @@ new #[Title('Registrar Compra')] class extends Component {
             </section>
         </div>
     </div>
+
+    {{-- Modal: aviso al salir con un comprobante cargado (lo abre el listener de Alpine). --}}
+    <flux:modal name="leave-warning" class="w-full max-w-md">
+        <div class="flex flex-col gap-5">
+            <div>
+                <flux:heading size="xl" class="font-display">Vas a salir de la venta</flux:heading>
+                <flux:subheading>
+                    El carrito, el cliente y los datos de pago quedan guardados por 8 horas.
+                    El comprobante no: tendrás que subirlo de nuevo.
+                </flux:subheading>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button type="button" variant="ghost">Quedarme</flux:button>
+                </flux:modal.close>
+                <flux:button type="button" variant="primary" x-on:click="window.location.href = pendingUrl">
+                    Salir de todos modos
+                </flux:button>
+            </div>
+        </div>
+    </flux:modal>
 
     {{-- Modal: alta rápida de cliente. Todo el formulario vive en el componente hijo aislado. --}}
     <flux:modal name="client-form" class="w-full max-w-md">

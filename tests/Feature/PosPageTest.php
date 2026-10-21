@@ -295,6 +295,202 @@ class PosPageTest extends TestCase
             ->assertSet("cart.{$product->id}", 1); // el carrito sigue intacto
     }
 
+    public function test_quick_quantity_adds_several_units_in_one_click_and_resets(): void
+    {
+        $product = $this->product(['total_stock' => 10]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->set('quickQuantity', '4')
+            ->call('addProduct', $product->id)
+            ->assertSet("cart.{$product->id}", 4)
+            ->assertSet('quickQuantity', '1'); // se reinicia para no agregar en bloque por error
+    }
+
+    public function test_quick_quantity_is_capped_at_the_available_stock(): void
+    {
+        $product = $this->product(['total_stock' => 3]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->set('quickQuantity', '10')
+            ->call('addProduct', $product->id)
+            ->assertSet("cart.{$product->id}", 3);
+    }
+
+    public function test_increment_adds_exactly_one_unit(): void
+    {
+        $product = $this->product(['total_stock' => 5]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->set('quickQuantity', '4')
+            ->call('addProduct', $product->id)
+            ->assertSet("cart.{$product->id}", 4)
+            ->call('increment', $product->id)
+            ->assertSet("cart.{$product->id}", 5) // no usa quickQuantity
+            ->call('increment', $product->id)
+            ->assertSet("cart.{$product->id}", 5); // topado al stock
+    }
+
+    public function test_the_cart_survives_leaving_the_page(): void
+    {
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')->call('addProduct', $product->id);
+
+        // Una visita nueva (como si hubiera salido y vuelto) recupera el carrito de la sesión.
+        Livewire::test('pages::pos')->assertSet("cart.{$product->id}", 1);
+    }
+
+    public function test_a_draft_older_than_eight_hours_is_discarded(): void
+    {
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        // Se arma el borrador y se envejece su marca de tiempo (queda guardada en sesión).
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->set('cartSavedAt', now()->subHours(9)->timestamp);
+
+        // Al volver, el borrador viejo ya no está.
+        Livewire::test('pages::pos')->assertSet('cart', []);
+    }
+
+    public function test_a_recent_draft_is_kept(): void
+    {
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->set('cartSavedAt', now()->subHours(2)->timestamp);
+
+        Livewire::test('pages::pos')->assertSet("cart.{$product->id}", 1);
+    }
+
+    public function test_clear_cart_empties_the_draft(): void
+    {
+        $product = $this->product();
+        $client = Client::factory()->create();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('selectClient', $client->id)
+            ->call('clearCart')
+            ->assertSet('cart', [])
+            ->assertSet('client_id', null)
+            ->assertSet('cartSavedAt', null);
+    }
+
+    public function test_confirming_a_sale_clears_the_session_draft(): void
+    {
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('confirmSale')
+            ->assertSet('cart', [])
+            ->assertSet('cartSavedAt', null);
+    }
+
+    public function test_initial_payment_field_only_appears_for_credit(): void
+    {
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->assertDontSee('Inicial / abono')
+            ->call('selectPaymentType', 'credito')
+            ->assertSee('Inicial / abono')
+            ->assertSee('Saldo pendiente')
+            ->call('selectPaymentType', 'contado')
+            ->assertDontSee('Inicial / abono')
+            ->assertSet('initial_payment', '0');
+    }
+
+    public function test_credit_sale_shows_initial_and_pending_balance_in_the_success_panel(): void
+    {
+        $product = $this->product(['detal_price' => 50.00, 'major_price' => 30.00]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('selectPaymentType', 'credito')
+            ->set('initial_payment', '20')
+            ->call('confirmSale')
+            ->assertSee('Inicial recibida')
+            ->assertSee('Saldo pendiente')
+            ->assertSet('initial_payment', '0');
+
+        $sale = Sale::query()->firstOrFail();
+
+        $this->assertSame('credito', $sale->payment_type);
+        $this->assertSame('20.00', $sale->initial_payment);
+        $this->assertSame('30.00', $sale->balanceDue());
+    }
+
+    public function test_initial_payment_over_the_total_shows_an_error_and_keeps_the_cart(): void
+    {
+        $product = $this->product(['detal_price' => 10.00]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('selectPaymentType', 'credito')
+            ->set('initial_payment', '25')
+            ->call('confirmSale')
+            ->assertHasErrors(['initial_payment'])
+            ->assertSet("cart.{$product->id}", 1);
+
+        $this->assertSame(0, Sale::query()->count());
+    }
+
+    public function test_oversized_payment_proof_is_rejected_with_a_specific_spanish_message(): void
+    {
+        Storage::fake('public');
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->set('payment_proof', UploadedFile::fake()->image('enorme.jpg')->size(6144)) // 6 MB
+            ->call('confirmSale')
+            ->assertHasErrors(['payment_proof'])
+            ->assertSee('El comprobante no puede pesar más de 5 MB');
+
+        $this->assertSame(0, Sale::query()->count());
+    }
+
+    public function test_a_four_megabyte_payment_proof_is_accepted(): void
+    {
+        Storage::fake('public');
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->set('payment_proof', UploadedFile::fake()->image('ok.jpg')->size(4096)) // 4 MB
+            ->call('confirmSale')
+            ->assertHasNoErrors();
+
+        $this->assertNotNull(Sale::query()->firstOrFail()->payment_proof_path);
+    }
+
     public function test_success_panel_shows_the_sale_and_can_start_another_one(): void
     {
         $product = $this->product();

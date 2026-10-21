@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $client_id
  * @property int $user_id
  * @property string $total
+ * @property string $initial_payment
  * @property Carbon $date
  * @property string $payment_method
  * @property string $payment_type
@@ -35,6 +36,7 @@ class Sale extends Model
         'client_id',
         'user_id',
         'total',
+        'initial_payment',
         'date',
         'payment_method',
         'payment_type',
@@ -49,6 +51,7 @@ class Sale extends Model
         return [
             'date' => 'datetime',
             'total' => 'decimal:2',
+            'initial_payment' => 'decimal:2',
         ];
     }
 
@@ -71,6 +74,14 @@ class Sale extends Model
                 ->when($endDate, fn (Builder $q) => $q->where($column, '<=', Carbon::parse($endDate)->endOfDay())),
             default => $query,
         };
+    }
+
+    /**
+     * Pending balance of a credit sale. Derived, never stored, so it cannot drift.
+     */
+    public function balanceDue(): string
+    {
+        return Money::fromCents(Money::toCents($this->total) - Money::toCents($this->initial_payment));
     }
 
     /**
