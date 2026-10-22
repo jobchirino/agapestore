@@ -19,7 +19,7 @@ class ClientFactory extends Factory
     {
         return [
             'name' => fake()->name(),
-            'phone' => fake()->numerify('0414-#######'),
+            'phone' => fake()->numerify('0414#######'),
             'address' => fake()->address(),
             'email' => fake()->unique()->safeEmail(),
         ];

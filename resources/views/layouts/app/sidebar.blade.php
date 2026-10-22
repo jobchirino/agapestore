@@ -18,6 +18,10 @@
 
             <flux:sidebar.nav>
                 <flux:sidebar.group :heading="__('Boutique')" class="grid">
+                    <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
+                        {{ __('Inicio') }}
+                    </flux:sidebar.item>
+
                     <flux:sidebar.item icon="archive-box" :href="route('inventory')" :current="request()->routeIs('inventory')" wire:navigate>
                         {{ __('Inventario') }}
                     </flux:sidebar.item>
@@ -26,22 +30,13 @@
                         {{ __('Registrar Compra') }}
                     </flux:sidebar.item>
 
-                    @foreach ([
-                        ['icon' => 'clock', 'label' => __('Historial de Ventas')],
-                        ['icon' => 'users', 'label' => __('Clientes')],
-                    ] as $soon)
-                        <div
-                            class="flex cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-zinc-400 in-data-flux-sidebar-collapsed-desktop:justify-center in-data-flux-sidebar-collapsed-desktop:px-0 dark:text-zinc-500"
-                            title="{{ __('Disponible en una fase próxima') }}"
-                            aria-disabled="true"
-                        >
-                            <flux:icon :name="$soon['icon']" class="size-5" />
-                            <span class="flex-1 in-data-flux-sidebar-collapsed-desktop:hidden">{{ $soon['label'] }}</span>
-                            <span class="rounded-md bg-zinc-900/5 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] in-data-flux-sidebar-collapsed-desktop:hidden dark:bg-white/10 dark:text-zinc-500">
-                                {{ __('Pronto') }}
-                            </span>
-                        </div>
-                    @endforeach
+                    <flux:sidebar.item icon="clock" :href="route('sales.history')" :current="request()->routeIs('sales.history')" wire:navigate>
+                        {{ __('Historial de Ventas') }}
+                    </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="users" :href="route('clients')" :current="request()->routeIs('clients')" wire:navigate>
+                        {{ __('Clientes') }}
+                    </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 

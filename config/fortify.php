@@ -116,9 +116,6 @@ return [
 
     'limiters' => [
         'login' => 'login',
-        /* @chisel-2fa */
-        'two-factor' => 'two-factor',
-        /* @end-chisel-2fa */
         /* @chisel-passkeys */
         'passkeys' => 'passkeys',
         /* @end-chisel-passkeys */
@@ -167,20 +164,11 @@ return [
     */
 
     'features' => [
-        /* @chisel-registration */
-        Features::registration(),
-        /* @end-chisel-registration */
-        Features::resetPasswords(),
+        // Registro público y recuperación de contraseña deshabilitados a propósito:
+        // las credenciales se gestionan con `php artisan agape:user`.
         /* @chisel-email-verification */
         Features::emailVerification(),
         /* @end-chisel-email-verification */
-        /* @chisel-2fa */
-        Features::twoFactorAuthentication([
-            'confirm' => true,
-            'confirmPassword' => true,
-            // 'window' => 0
-        ]),
-        /* @end-chisel-2fa */
         /* @chisel-passkeys */
         Features::passkeys([
             'confirmPassword' => true,

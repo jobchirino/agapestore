@@ -50,31 +50,31 @@ colors:
   surface-variant: '#e2e2e4'
 typography:
   display-lg:
-    fontFamily: Bodoni Moda
+    fontFamily: Manrope
     fontSize: 56px
     fontWeight: '400'
     lineHeight: 64px
     letterSpacing: -0.02em
   display-lg-mobile:
-    fontFamily: Bodoni Moda
+    fontFamily: Manrope
     fontSize: 38px
     fontWeight: '400'
     lineHeight: 44px
     letterSpacing: -0.01em
   headline-lg:
-    fontFamily: Bodoni Moda
+    fontFamily: Manrope
     fontSize: 32px
     fontWeight: '500'
     lineHeight: 40px
     letterSpacing: -0.01em
   headline-lg-mobile:
-    fontFamily: Bodoni Moda
+    fontFamily: Manrope
     fontSize: 26px
     fontWeight: '500'
     lineHeight: 34px
     letterSpacing: 0em
   headline-sm:
-    fontFamily: Bodoni Moda
+    fontFamily: Manrope
     fontSize: 22px
     fontWeight: '500'
     lineHeight: 30px
@@ -139,7 +139,7 @@ spacing:
 
 This design system synthesizes the architectural precision of macOS Sequoia with the tactile opulence of European haute perfumery and high jewelry maison curation. The visual tone balances industrial software rigor—crisp tabular data, micrometric structural padding, and whisper-quiet vibrancy—with editorial high-fashion romance. 
 
-Targeted at discerning luxury shoppers, boutique concierges, and store directorship, the interface evokes the composed silence of an exclusive boutique showroom. Whitespace is architectural rather than empty; typography oscillates between the dramatic, razor-thin hairlines of Bodoni Moda serifs and the calibrated functionalism of Manrope numerals. The interface communicates effortless prestige, computational restraint, and absolute material clarity.
+Targeted at discerning luxury shoppers, boutique concierges, and store directorship, the interface evokes the composed silence of an exclusive boutique showroom. Whitespace is architectural rather than empty; a single calibrated sans-serif carries both editorial headings and operational numerals. The interface communicates effortless prestige, computational restraint, and absolute material clarity.
 
 ## Colors
 
@@ -153,10 +153,11 @@ The palette establishes an ultra-clean, gallery-grade foundation that allows fin
 
 ## Typography
 
-The typography system operates on a dual-engine architecture:
-1. **The Display Tier (Bodoni Moda)**: High-contrast didone serifs reserved for product titles, atelier provenance, and section intros (headings only). The variable optical sizing ensures hairline strokes never disintegrate on high-density Retina displays.
-2. **The Operational Tier (Manrope)**: A clean, geometric neo-grotesque that handles interface commands, navigation, specifications, and data dense lists. **All numerals use Manrope, including large KPI figures** — never the display serif, whose uneven glyph widths make numbers hard to scan.
+The typography system uses a **single family** for the entire interface:
+1. **Manrope everywhere**: A clean, geometric neo-grotesque used for headings, interface commands, navigation, specifications, data dense lists and every numeral. Hierarchy comes from weight, size and letter-spacing — not from a second typeface.
+2. **Headings**: Manrope with a heavy weight and tight tracking (`font-display` maps to Manrope). Page titles stay distinctive through scale and the fuchsia eyebrow, not through a serif.
 3. **Tabular Numerics**: All price displays, SKU identifiers, margin calculations, and inventory tallies enforce `font-feature-settings: "tnum" 1, "lnum" 1`. This delivers strict vertical alignment across dense macOS-inspired data tables and order summaries.
+4. **KPI figures**: `.kpi-figure` scales with the card width via container queries (`clamp(1.25rem, 10cqi, 2.75rem)`), so long amounts never overflow when the sidebar opens or closes.
 
 ## Layout & Spacing
 

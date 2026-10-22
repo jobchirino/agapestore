@@ -63,6 +63,21 @@ new #[Title('Inventario')] class extends Component {
     public ?string $deleteCategoryError = null;
 
     // Cualquier cambio de filtro vuelve a la página 1, si no podrías quedar en una página vacía.
+    // Solo para tests y claridad: indica que la apertura vino del Dashboard.
+    public bool $autoCreateRequested = false;
+
+    public function mount(): void
+    {
+        // Acción rápida del Dashboard: llega por sesión y abre el modal de Nuevo Producto.
+        // Caduca a los 5 minutos y se consume una sola vez.
+        $pending = session()->pull('open_create_product_modal');
+
+        if (is_array($pending) && ($pending['at'] ?? 0) > now()->subMinutes(5)->timestamp) {
+            $this->autoCreateRequested = true;
+            $this->openCreate();
+        }
+    }
+
     public function updatedSearch(): void
     {
         $this->resetPage();
@@ -417,15 +432,15 @@ new #[Title('Inventario')] class extends Component {
 
     {{-- KPIs --}}
     <section class="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-5">
-        <div class="card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
+        <div class="kpi-card card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Total productos</p>
-            <p class="text-[44px] leading-none font-bold tnum text-zinc-900 dark:text-white">{{ $this->kpis['total'] }}</p>
+            <p class="kpi-figure text-zinc-900 dark:text-white">{{ $this->kpis['total'] }}</p>
             <p class="text-sm text-zinc-500 dark:text-zinc-400">productos activos en inventario</p>
         </div>
 
-        <div class="card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
+        <div class="kpi-card card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Valor del inventario</p>
-            <p class="text-[44px] leading-none font-bold tnum text-zinc-900 dark:text-white">${{ number_format($this->kpis['sale_value'], 2) }}</p>
+            <p class="kpi-figure text-zinc-900 dark:text-white">${{ number_format($this->kpis['sale_value'], 2) }}</p>
             <div class="flex flex-wrap items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                 <span class="tnum">Costo base ${{ number_format($this->kpis['cost_value'], 2) }}</span>
                 <span class="rounded-md bg-profit-bg px-2 py-0.5 text-xs font-bold tnum text-profit-text dark:bg-emerald-500/15 dark:text-emerald-300">
@@ -434,10 +449,10 @@ new #[Title('Inventario')] class extends Component {
             </div>
         </div>
 
-        <div class="card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
+        <div class="kpi-card card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Alertas de stock</p>
             <div class="flex items-center justify-between gap-3">
-                <p class="text-[44px] leading-none font-bold tnum text-zinc-900 dark:text-white">{{ $this->kpis['critical'] }}</p>
+                <p class="kpi-figure text-zinc-900 dark:text-white">{{ $this->kpis['critical'] }}</p>
                 <flux:button size="sm" :variant="$criticalOnly ? 'primary' : 'outline'" wire:click="$toggle('criticalOnly')">
                     {{ $criticalOnly ? 'Ver todas' : 'Ver críticas' }}
                 </flux:button>

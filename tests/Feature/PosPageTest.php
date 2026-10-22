@@ -278,7 +278,8 @@ class PosPageTest extends TestCase
             ->call('save')
             ->assertDispatched('client-created');
 
-        $this->assertDatabaseHas('clients', ['name' => 'Juan López', 'phone' => '0424-1112233']);
+        // El guion se normaliza: solo se guardan dígitos.
+        $this->assertDatabaseHas('clients', ['name' => 'Juan López', 'phone' => '04241112233']);
     }
 
     public function test_pos_listens_for_the_created_client_without_losing_the_cart(): void
@@ -413,7 +414,7 @@ class PosPageTest extends TestCase
             ->assertDontSee('Inicial / abono')
             ->call('selectPaymentType', 'credito')
             ->assertSee('Inicial / abono')
-            ->assertSee('Saldo pendiente')
+            ->assertSee('Pendiente')
             ->call('selectPaymentType', 'contado')
             ->assertDontSee('Inicial / abono')
             ->assertSet('initial_payment', '0');
@@ -431,7 +432,7 @@ class PosPageTest extends TestCase
             ->set('initial_payment', '20')
             ->call('confirmSale')
             ->assertSee('Inicial recibida')
-            ->assertSee('Saldo pendiente')
+            ->assertSee('Pendiente')
             ->assertSet('initial_payment', '0');
 
         $sale = Sale::query()->firstOrFail();
@@ -489,6 +490,22 @@ class PosPageTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertNotNull(Sale::query()->firstOrFail()->payment_proof_path);
+    }
+
+    public function test_success_panel_hands_the_sale_to_the_history_via_session(): void
+    {
+        $product = $this->product();
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->call('addProduct', $product->id)
+            ->call('confirmSale')
+            ->assertSee('Ver en el historial')
+            ->assertSee(route('sales.history'));
+
+        // La URL queda limpia: el id viaja por sesión y se consume una sola vez.
+        $this->assertSame(Sale::query()->firstOrFail()->id, session('open_sale.id'));
     }
 
     public function test_success_panel_shows_the_sale_and_can_start_another_one(): void

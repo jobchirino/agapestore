@@ -4,7 +4,6 @@ namespace Tests\Feature\Auth;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Fortify\Features;
 use Tests\TestCase;
 
 class AuthenticationTest extends TestCase
@@ -48,23 +47,17 @@ class AuthenticationTest extends TestCase
         $this->assertGuest();
     }
 
-    public function test_users_with_two_factor_enabled_are_redirected_to_two_factor_challenge(): void
+    public function test_login_error_message_is_in_spanish(): void
     {
-        $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
+        $user = User::factory()->create();
 
-        Features::twoFactorAuthentication([
-            'confirm' => true,
-            'confirmPassword' => true,
-        ]);
-
-        $user = User::factory()->withTwoFactor()->create();
-
-        $response = $this->post(route('login.store'), [
+        $this->post(route('login.store'), [
             'email' => $user->email,
-            'password' => 'password',
+            'password' => 'wrong-password',
+        ])->assertSessionHasErrors([
+            'email' => 'Estas credenciales no coinciden con nuestros registros.',
         ]);
 
-        $response->assertRedirect(route('two-factor.login'));
         $this->assertGuest();
     }
 

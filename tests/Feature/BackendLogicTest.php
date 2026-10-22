@@ -381,17 +381,17 @@ class BackendLogicTest extends TestCase
 
         $client = $service->createClient([
             'name' => 'María Pérez',
-            'phone' => '0414-1112233',
+            'phone' => '0414-1112233', // se normaliza a 04141112233
             'email' => 'maria@example.com',
         ]);
 
-        $this->assertDatabaseHas('clients', ['name' => 'María Pérez', 'phone' => '0414-1112233']);
+        $this->assertDatabaseHas('clients', ['name' => 'María Pérez', 'phone' => '04141112233']);
 
         $service->updateClient($client, ['address' => 'Av. Principal']);
 
         $client->refresh();
         $this->assertSame('Av. Principal', $client->address);
-        $this->assertSame('0414-1112233', $client->phone);
+        $this->assertSame('04141112233', $client->phone);
     }
 
     public function test_client_name_is_required_and_email_must_be_valid(): void
@@ -404,6 +404,36 @@ class BackendLogicTest extends TestCase
         } catch (ValidationException $e) {
             $this->assertArrayHasKey('name', $e->errors());
             $this->assertArrayHasKey('email', $e->errors());
+        }
+
+        $this->assertSame(0, Client::query()->count());
+    }
+
+    public function test_client_phone_accepts_national_and_international_formats(): void
+    {
+        $service = app(ClientService::class);
+
+        $national = $service->createClient(['name' => 'Nacional', 'phone' => '04124737116']);
+        $international = $service->createClient(['name' => 'Internacional', 'phone' => '+5841247377116']);
+        $normalized = $service->createClient(['name' => 'Con formato', 'phone' => '0412-473 71 16']);
+
+        $this->assertSame('04124737116', $national->phone);
+        $this->assertSame('+5841247377116', $international->phone);
+        $this->assertSame('04124737116', $normalized->phone); // espacios y guiones se limpian
+    }
+
+    public function test_client_phone_rejects_letters_and_invalid_formats(): void
+    {
+        $service = app(ClientService::class);
+
+        foreach (['0412ABC7116', '12345', '+58 412', '4124737116'] as $phone) {
+            try {
+                $service->createClient(['name' => 'Inválido '.$phone, 'phone' => $phone]);
+
+                $this->fail("Expected ValidationException for phone {$phone}.");
+            } catch (ValidationException $e) {
+                $this->assertArrayHasKey('phone', $e->errors());
+            }
         }
 
         $this->assertSame(0, Client::query()->count());

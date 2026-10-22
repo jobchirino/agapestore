@@ -53,17 +53,9 @@ class FortifyServiceProvider extends ServiceProvider
         /* @chisel-email-verification */
         Fortify::verifyEmailView(fn () => view('pages::auth.verify-email'));
         /* @end-chisel-email-verification */
-        /* @chisel-2fa */
-        Fortify::twoFactorChallengeView(fn () => view('pages::auth.two-factor-challenge'));
-        /* @end-chisel-2fa */
         /* @chisel-password-confirmation */
         Fortify::confirmPasswordView(fn () => view('pages::auth.confirm-password'));
         /* @end-chisel-password-confirmation */
-        /* @chisel-registration */
-        Fortify::registerView(fn () => view('pages::auth.register'));
-        /* @end-chisel-registration */
-        Fortify::resetPasswordView(fn () => view('pages::auth.reset-password'));
-        Fortify::requestPasswordResetLinkView(fn () => view('pages::auth.forgot-password'));
     }
 
     /**
@@ -71,10 +63,6 @@ class FortifyServiceProvider extends ServiceProvider
      */
     private function configureRateLimiting(): void
     {
-        RateLimiter::for('two-factor', function (Request $request) {
-            return Limit::perMinute(5)->by($request->session()->get('login.id'));
-        });
-
         RateLimiter::for('login', function (Request $request) {
             $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
 

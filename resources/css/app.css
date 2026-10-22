@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400..700&family=Manrope:wght@400..800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&display=swap');
 @import 'tailwindcss';
 @import '../../vendor/livewire/flux/dist/flux.css';
 
@@ -12,7 +12,8 @@
 @theme {
     /* Design system "Haute Atelier Precision" (DESIGN.md) */
     --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-    --font-display: 'Bodoni Moda', ui-serif, Georgia, serif;
+    /* Una sola familia en toda la app: los títulos se diferencian por peso, tamaño y tracking. */
+    --font-display: 'Manrope', ui-sans-serif, system-ui, sans-serif;
 
     /* Fucsia Ágape (light mode primary) */
     --color-agape: #be185d;
@@ -78,7 +79,7 @@
         border-color: rgba(255, 255, 255, 0.1);
     }
 
-    /* Numbers always use Manrope (tabular figures); Bodoni Moda is for headings only (DESIGN.md) */
+    /* Toda la app usa Manrope; los números llevan cifras tabulares (DESIGN.md). */
     .tnum {
         font-feature-settings: 'tnum' 1, 'lnum' 1;
     }
@@ -106,6 +107,23 @@
         box-shadow:
             0 4px 20px -2px rgba(0, 0, 0, 0.05),
             0 1px 2px 0 rgba(0, 0, 0, 0.02);
+    }
+}
+
+@layer components {
+    /* Tarjeta KPI como contenedor: el tamaño de la cifra depende del ancho REAL de la
+       tarjeta, no de la ventana. Así no se rompe al abrir/cerrar el sidebar.
+       min-width: 0 evita que un número largo empuje la columna de la grilla. */
+    .kpi-card {
+        container-type: inline-size;
+        min-width: 0;
+    }
+
+    /* Cifras de KPI: fluidas según el contenedor y con tabular-nums para alinear dígitos. */
+    .kpi-figure {
+        @apply leading-none font-bold whitespace-nowrap;
+        font-size: clamp(1.25rem, 10cqi, 2.75rem);
+        font-feature-settings: 'tnum' 1, 'lnum' 1;
     }
 }
 

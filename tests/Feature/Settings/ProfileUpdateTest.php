@@ -11,79 +11,39 @@ class ProfileUpdateTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_profile_page_is_displayed(): void
+    public function test_profile_page_shows_only_the_name_editor(): void
     {
-        $this->actingAs($user = User::factory()->create());
-
-        $this->get(route('profile.edit'))->assertOk();
+        $this->actingAs(User::factory()->create())
+            ->get(route('profile.edit'))
+            ->assertOk()
+            ->assertSee('Perfil')
+            ->assertDontSee('Eliminar cuenta')
+            ->assertDontSee('delete-user');
     }
 
-    public function test_profile_information_can_be_updated(): void
+    public function test_name_can_be_updated_without_touching_the_email(): void
     {
-        $user = User::factory()->create();
-
+        $user = User::factory()->create(['name' => 'Nombre Viejo', 'email' => 'fijo@agape.com']);
         $this->actingAs($user);
 
-        $response = Livewire::test('pages::settings.profile')
-            ->set('name', 'Test User')
-            ->set('email', 'test@example.com')
-            ->call('updateProfileInformation');
-
-        $response->assertHasNoErrors();
+        Livewire::test('pages::settings.profile')
+            ->set('name', 'Nombre Nuevo')
+            ->call('updateProfileInformation')
+            ->assertHasNoErrors();
 
         $user->refresh();
 
-        $this->assertEquals('Test User', $user->name);
-        $this->assertEquals('test@example.com', $user->email);
-        $this->assertNull($user->email_verified_at);
+        $this->assertSame('Nombre Nuevo', $user->name);
+        $this->assertSame('fijo@agape.com', $user->email);
     }
 
-    public function test_email_verification_status_is_unchanged_when_email_address_is_unchanged(): void
+    public function test_name_is_required(): void
     {
-        $user = User::factory()->create();
+        $this->actingAs(User::factory()->create());
 
-        $this->actingAs($user);
-
-        $response = Livewire::test('pages::settings.profile')
-            ->set('name', 'Test User')
-            ->set('email', $user->email)
-            ->call('updateProfileInformation');
-
-        $response->assertHasNoErrors();
-
-        $this->assertNotNull($user->refresh()->email_verified_at);
-    }
-
-    public function test_user_can_delete_their_account(): void
-    {
-        $user = User::factory()->create();
-
-        $this->actingAs($user);
-
-        $response = Livewire::test('pages::settings.delete-user-modal')
-            ->set('password', 'password')
-            ->call('deleteUser');
-
-        $response
-            ->assertHasNoErrors()
-            ->assertRedirect('/');
-
-        $this->assertNull($user->fresh());
-        $this->assertFalse(auth()->check());
-    }
-
-    public function test_correct_password_must_be_provided_to_delete_account(): void
-    {
-        $user = User::factory()->create();
-
-        $this->actingAs($user);
-
-        $response = Livewire::test('pages::settings.delete-user-modal')
-            ->set('password', 'wrong-password')
-            ->call('deleteUser');
-
-        $response->assertHasErrors(['password']);
-
-        $this->assertNotNull($user->fresh());
+        Livewire::test('pages::settings.profile')
+            ->set('name', '')
+            ->call('updateProfileInformation')
+            ->assertHasErrors(['name']);
     }
 }

@@ -2,6 +2,7 @@
 
 use App\Models\Client;
 use App\Models\Product;
+use App\Models\Sale;
 use App\Services\SaleService;
 use App\Support\Money;
 use Flux\Flux;
@@ -90,13 +91,8 @@ new #[Title('Registrar Compra')] class extends Component {
      */
     public function paymentMethods(): array
     {
-        return [
-            'pago_movil' => 'Pago Móvil',
-            'zelle' => 'Zelle',
-            'efectivo' => 'Efectivo',
-            'binance' => 'Binance',
-            'punto' => 'Punto',
-        ];
+        // Fuente única en Sale, compartida con el historial y los abonos.
+        return Sale::PAYMENT_METHODS;
     }
 
     /**
@@ -355,6 +351,23 @@ new #[Title('Registrar Compra')] class extends Component {
             : null;
     }
 
+    /**
+     * El input datetime-local usa el formato del navegador (24h). Esta vista previa
+     * muestra la misma fecha en 12 horas para confirmar lo que se va a registrar.
+     */
+    public function datePreview(): string
+    {
+        if ($this->date === '') {
+            return '—';
+        }
+
+        try {
+            return Carbon::parse($this->date)->format('d/m/Y g:i A');
+        } catch (\Throwable) {
+            return 'fecha no válida';
+        }
+    }
+
     // ---------------------------------------------------------------- Confirmar
 
     public function confirmSale(SaleService $sales): void
@@ -404,6 +417,10 @@ new #[Title('Registrar Compra')] class extends Component {
 
             return;
         }
+
+        // El historial abrirá esta venta al entrar. Va por sesión para no ensuciar la URL.
+        // Se consume una vez y caduca a los 10 minutos.
+        session()->put('open_sale', ['id' => $sale->id, 'at' => now()->timestamp]);
 
         $this->lastSale = [
             'id' => $sale->id,
@@ -496,27 +513,28 @@ new #[Title('Registrar Compra')] class extends Component {
                 <div class="flex flex-wrap gap-8">
                     <div>
                         <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Total de la venta</p>
-                        <p class="text-3xl font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $lastSale['total'], 2) }}</p>
+                        <p class="text-3xl font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $lastSale['total'], 2) }}</p>
                     </div>
 
                     @if ($lastSale['type'] === 'credito')
                         <div>
                             <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Inicial recibida</p>
-                            <p class="text-3xl font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $lastSale['initial'], 2) }}</p>
+                            <p class="text-3xl font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $lastSale['initial'], 2) }}</p>
                         </div>
                         <div>
-                            <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Saldo pendiente</p>
-                            <p class="text-3xl font-bold tnum text-amber-600 dark:text-amber-300">${{ number_format((float) $lastSale['balance'], 2) }}</p>
+                            <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Pendiente</p>
+                            <p class="text-3xl font-bold tnum whitespace-nowrap text-amber-600 dark:text-amber-300">${{ number_format((float) $lastSale['balance'], 2) }}</p>
                         </div>
                     @endif
 
                     <div>
                         <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Ganancia real</p>
-                        <p class="text-3xl font-bold tnum text-profit-text dark:text-emerald-300">+${{ number_format((float) $lastSale['profit'], 2) }}</p>
+                        <p class="text-3xl font-bold tnum whitespace-nowrap text-profit-text dark:text-emerald-300">+${{ number_format((float) $lastSale['profit'], 2) }}</p>
                     </div>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex flex-wrap gap-2">
                     <flux:button variant="outline" wire:click="startNewSale" icon="plus">Registrar otra venta</flux:button>
+                    <flux:button variant="outline" :href="route('sales.history')" wire:navigate icon="clock">Ver en el historial</flux:button>
                     <flux:button variant="primary" :href="route('inventory')" wire:navigate icon="archive-box">Ir al inventario</flux:button>
                 </div>
             </div>
@@ -559,7 +577,7 @@ new #[Title('Registrar Compra')] class extends Component {
                             wire:key="result-{{ $product->id }}"
                             wire:click="addProduct({{ $product->id }})"
                             @disabled($soldOut)
-                            class="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-left transition hover:border-agape/30 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/5"
+                            class="group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-left transition duration-150 hover:-translate-y-0.5 hover:border-agape/40 hover:bg-zinc-50 hover:shadow-sm active:scale-[0.995] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none dark:hover:bg-white/5"
                         >
                             @if ($product->img_route)
                                 <img src="{{ asset('storage/'.$product->img_route) }}" alt="{{ $product->name }}" class="size-10 shrink-0 rounded-lg object-cover" />
@@ -574,7 +592,7 @@ new #[Title('Registrar Compra')] class extends Component {
                                 <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">{{ $product->category->name }}</p>
                             </div>
 
-                            <span class="shrink-0 text-sm font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $product->detal_price, 2) }}</span>
+                            <span class="shrink-0 text-sm font-bold tnum text-zinc-900 transition group-hover:text-agape dark:text-white dark:group-hover:text-agape-dark">${{ number_format((float) $product->detal_price, 2) }}</span>
 
                             @if ($soldOut)
                                 <span class="shrink-0 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">Agotado</span>
@@ -585,6 +603,13 @@ new #[Title('Registrar Compra')] class extends Component {
                             @if ($inCart > 0)
                                 <span class="shrink-0 rounded-full bg-agape px-2.5 py-1 text-xs font-bold tnum text-white dark:bg-agape-dark dark:text-ink">{{ $inCart }} en carrito</span>
                             @endif
+
+                            {{-- Refuerzo visual: la fila entera es clickeable, pero el botón deja claro que se puede agregar. --}}
+                            @unless ($soldOut)
+                                <span class="inline-flex shrink-0 items-center gap-1 rounded-lg bg-agape/10 px-2.5 py-1 text-xs font-bold text-agape transition group-hover:bg-agape group-hover:text-white dark:bg-agape-dark/15 dark:text-agape-dark dark:group-hover:bg-agape-dark dark:group-hover:text-ink">
+                                    <flux:icon name="plus" class="size-3.5" /> Agregar
+                                </span>
+                            @endunless
                         </button>
                     @empty
                         <p class="py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">No hay productos que coincidan.</p>
@@ -765,14 +790,17 @@ new #[Title('Registrar Compra')] class extends Component {
                     />
 
                     <div class="flex items-center justify-between rounded-xl bg-zinc-900/5 px-4 py-2 dark:bg-white/5">
-                        <span class="text-sm text-zinc-500 dark:text-zinc-400">Saldo pendiente</span>
+                        <span class="text-sm text-zinc-500 dark:text-zinc-400">Pendiente</span>
                         <span class="font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $this->summary['balance'], 2) }}</span>
                     </div>
                 @endif
 
                 {{-- .live para mantener la misma cadencia que los buscadores y evitar el bug de
                      campos que pierden lo escrito por un re-render. --}}
-                <flux:input wire:model.live.debounce.500ms="date" type="datetime-local" label="Fecha de la venta" />
+                <div class="flex flex-col gap-1">
+                    <flux:input wire:model.live.debounce.500ms="date" type="datetime-local" label="Fecha de la venta" />
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400">Se registrará: {{ $this->datePreview() }}</p>
+                </div>
             </section>
 
             {{-- Comprobante --}}
@@ -846,7 +874,7 @@ new #[Title('Registrar Compra')] class extends Component {
 
                 <div class="flex items-end justify-between">
                     <span class="text-sm text-zinc-500 dark:text-zinc-400">Total a pagar</span>
-                    <span class="text-4xl font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $this->summary['total'], 2) }}</span>
+                    <span class="text-[clamp(1.75rem,2.2vw,2.25rem)] font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $this->summary['total'], 2) }}</span>
                 </div>
 
                 <div class="flex items-center justify-between rounded-xl bg-profit-bg px-4 py-3 dark:bg-emerald-500/15">
