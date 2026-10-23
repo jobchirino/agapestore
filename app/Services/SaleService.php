@@ -4,17 +4,21 @@ namespace App\Services;
 
 use App\Models\Product;
 use App\Models\Sale;
+use App\Support\LowStock;
 use App\Support\Money;
 use App\Support\PaymentProofs;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
 
 class SaleService
 {
+    public function __construct(private readonly TelegramService $telegram) {}
+
     /**
      * Registers a sale and deducts stock atomically. Any failure rolls back everything.
      *
@@ -69,8 +73,12 @@ class SaleService
             }
         }
 
+        // Se llena dentro de la transacción; se envía solo si el commit es exitoso.
+        /** @var list<array{product: Product, before: int, after: int}> $lowStock */
+        $lowStock = [];
+
         try {
-            return DB::transaction(function () use ($saleData, $items, $proofPath, $initialCents, $saleDate): Sale {
+            $sale = DB::transaction(function () use ($saleData, $items, $proofPath, $initialCents, $saleDate, &$lowStock): Sale {
                 $lines = [];
                 $totalCents = 0;
 
@@ -88,10 +96,12 @@ class SaleService
                         ->lockForUpdate()
                         ->firstOrFail();
 
+                    $stockBefore = $product->total_stock;
+
                     // Re-checked with a conditional UPDATE below: lockForUpdate() is a no-op on SQLite.
-                    if ($product->total_stock < $quantity) {
+                    if ($stockBefore < $quantity) {
                         throw ValidationException::withMessages([
-                            'items' => "Stock insuficiente para {$product->name}: solicitado {$quantity}, disponible {$product->total_stock}.",
+                            'items' => "Stock insuficiente para {$product->name}: solicitado {$quantity}, disponible {$stockBefore}.",
                         ]);
                     }
 
@@ -104,6 +114,12 @@ class SaleService
                         throw ValidationException::withMessages([
                             'items' => "Stock insuficiente para {$product->name}: solicitado {$quantity}.",
                         ]);
+                    }
+
+                    $stockAfter = $stockBefore - $quantity;
+
+                    if (LowStock::shouldNotify($stockBefore, $stockAfter)) {
+                        $lowStock[] = ['product' => $product, 'before' => $stockBefore, 'after' => $stockAfter];
                     }
 
                     $line = [
@@ -147,5 +163,25 @@ class SaleService
 
             throw $e;
         }
+
+        // Ya fuera de DB::transaction(): si hubo rollback no se llega aquí, así que
+        // Telegram nunca recibe una venta que no se guardó. Los fallos de Telegram
+        // se capturan dentro del servicio y no afectan la venta ni al POS.
+        if ($this->telegram->isConfigured()) {
+            try {
+                $this->telegram->notifySaleCreated($sale);
+
+                if ($lowStock !== []) {
+                    $this->telegram->notifyLowStockSummary($lowStock, $sale->id);
+                }
+            } catch (Throwable $e) {
+                Log::warning('No se pudieron enviar las notificaciones de Telegram de la venta.', [
+                    'sale_id' => $sale->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $sale;
     }
 }

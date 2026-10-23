@@ -3,15 +3,20 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Support\LowStock;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ProductService
 {
+    public function __construct(private readonly TelegramService $telegram) {}
+
     /**
      * @param  array<string, mixed>  $data
      */
@@ -67,10 +72,14 @@ class ProductService
      */
     public function adjustStock(Product $product, int $quantityChange): Product
     {
-        return DB::transaction(function () use ($product, $quantityChange): Product {
+        $previousStock = null;
+        $newStock = null;
+
+        $product = DB::transaction(function () use ($product, $quantityChange, &$previousStock, &$newStock): Product {
             $locked = Product::query()->whereKey($product->getKey())->lockForUpdate()->firstOrFail();
 
-            $newStock = $locked->total_stock + $quantityChange;
+            $previousStock = $locked->total_stock;
+            $newStock = $previousStock + $quantityChange;
 
             if ($newStock < 0) {
                 throw ValidationException::withMessages([
@@ -82,6 +91,26 @@ class ProductService
 
             return $locked;
         });
+
+        // Solo después del commit: una subida, o una bajada que no cruza el umbral,
+        // no genera ruido. El fallo de Telegram nunca afecta el ajuste de stock.
+        if (
+            $this->telegram->isConfigured()
+            && $previousStock !== null
+            && $newStock !== null
+            && LowStock::shouldNotify($previousStock, $newStock)
+        ) {
+            try {
+                $this->telegram->notifyLowStock($product, $previousStock, $newStock);
+            } catch (Throwable $e) {
+                Log::warning('No se pudo enviar la alerta de stock por Telegram.', [
+                    'product_id' => $product->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $product;
     }
 
     /**

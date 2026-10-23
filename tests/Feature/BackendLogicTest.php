@@ -615,6 +615,29 @@ class BackendLogicTest extends TestCase
         }
     }
 
+    public function test_sale_with_a_future_date_is_rejected_by_the_service(): void
+    {
+        $product = Product::factory()->create(['total_stock' => 5, 'detal_price' => 10.00]);
+
+        try {
+            app(SaleService::class)->createSale(
+                [
+                    'user_id' => $this->user->id,
+                    'payment_method' => 'efectivo',
+                    'date' => '2026-10-18 09:00:00',
+                ],
+                [['product_id' => $product->id, 'quantity' => 1]],
+            );
+
+            $this->fail('Expected ValidationException was not thrown.');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString('no puede ser futura', $e->getMessage());
+        }
+
+        $this->assertSame(0, Sale::query()->count());
+        $this->assertSame(5, $product->fresh()->total_stock);
+    }
+
     private function assertInvalidField(callable $action, string $field): void
     {
         try {

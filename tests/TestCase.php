@@ -14,6 +14,14 @@ abstract class TestCase extends BaseTestCase
 
         // El respaldo de la tasa BCV vive en el disco local; los tests no deben leer el real.
         Storage::fake('local');
+
+        // Nunca enviar mensajes reales de Telegram durante los tests. Los tests de
+        // notificaciones habilitan el servicio explícitamente y usan Http::fake().
+        config([
+            'services.telegram.enabled' => false,
+            'services.telegram.bot_token' => null,
+            'services.telegram.chat_id' => null,
+        ]);
     }
 
     protected function skipUnlessFortifyHas(string $feature, ?string $message = null): void

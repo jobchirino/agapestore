@@ -40,6 +40,13 @@ class PosPageTest extends TestCase
         ], $attributes));
     }
 
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
+    }
+
     public function test_guests_are_redirected_to_login(): void
     {
         $this->get(route('pos'))->assertRedirect(route('login'));
@@ -229,6 +236,16 @@ class PosPageTest extends TestCase
 
         $this->assertNull($sale->client_id);
         $this->assertSame('2026-10-10 09:30', $sale->date->format('Y-m-d H:i'));
+    }
+
+    public function test_default_sale_date_uses_caracas_time_near_midnight(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-22 20:29:00', 'America/Caracas'));
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::pos')
+            ->assertSet('date', '2026-10-22T20:29');
     }
 
     public function test_future_dates_are_rejected(): void

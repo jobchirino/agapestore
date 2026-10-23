@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * @property int $id
  * @property int|null $client_id
+ * @property Client|null $client
  * @property int $user_id
  * @property string $total
  * @property string $initial_payment

@@ -340,6 +340,52 @@ class SalesHistoryTest extends TestCase
             ->assertSee('$150.00'); // saldo pendiente
     }
 
+    public function test_payment_default_date_uses_caracas_time_near_midnight(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-22 20:29:00', 'America/Caracas'));
+
+        $sale = $this->makeSale([
+            'total' => '100.00',
+            'payment_type' => 'credito',
+            'initial_payment' => '0',
+            'date' => '2026-10-22 10:00:00',
+        ]);
+
+        $this->actingAs($this->user);
+
+        Livewire::test('pages::sales.detail', ['saleId' => $sale->id])
+            ->assertSet('date', '2026-10-22T20:29')
+            ->set('amount', '10')
+            ->call('savePayment')
+            ->assertHasNoErrors();
+
+        $payment = SalePayment::query()->latest('id')->firstOrFail();
+
+        // Sin la zona Caracas, a las 20:29 se guardaba 2026-10-23 00:29.
+        $this->assertSame('2026-10-22 20:29:00', $payment->date->format('Y-m-d H:i:s'));
+
+        Carbon::setTestNow();
+    }
+
+    public function test_opening_the_detail_refreshes_the_payment_date(): void
+    {
+        $sale = $this->makeSale();
+        Carbon::setTestNow(Carbon::parse('2026-10-22 20:00:00', 'America/Caracas'));
+
+        $this->actingAs($this->user);
+
+        $component = Livewire::test('pages::sales.detail');
+
+        // El componente se montó a las 20:00; al abrir el detalle a las 20:29 debe actualizar.
+        Carbon::setTestNow(Carbon::parse('2026-10-22 20:29:00', 'America/Caracas'));
+
+        $component->dispatch('open-sale', saleId: $sale->id)
+            ->assertSet('saleId', $sale->id)
+            ->assertSet('date', '2026-10-22T20:29');
+
+        Carbon::setTestNow();
+    }
+
     public function test_registering_a_payment_from_the_detail_lowers_the_balance(): void
     {
         $sale = $this->makeSale([
