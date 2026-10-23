@@ -16,4 +16,12 @@ final class Money
     {
         return number_format($cents / 100, 2, '.', '');
     }
+
+    /**
+     * Formato venezolano para bolívares: Bs. 1.234,56
+     */
+    public static function bs(string|int|float $amount): string
+    {
+        return 'Bs. '.number_format((float) $amount, 2, ',', '.');
+    }
 }

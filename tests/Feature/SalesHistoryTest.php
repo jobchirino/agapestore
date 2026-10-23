@@ -355,7 +355,9 @@ class SalesHistoryTest extends TestCase
             ->set('payment_method', 'zelle')
             ->call('savePayment')
             ->assertHasNoErrors()
-            ->assertDispatched('payment-registered');
+            ->assertDispatched('payment-registered')
+            ->assertSee('$80.00')
+            ->assertSee('$70.00');
 
         $this->assertSame('70.00', $sale->fresh()->balanceDue());
         $this->assertDatabaseHas('sale_payments', ['sale_id' => $sale->id, 'amount' => 80.00]);

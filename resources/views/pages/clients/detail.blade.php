@@ -96,14 +96,17 @@ new class extends Component {
                     <div class="rounded-xl bg-zinc-900/5 px-4 py-3 dark:bg-white/5">
                         <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Total comprado</p>
                         <p class="text-lg font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $client->totalSpent(), 2) }}</p>
+                        <x-bs-amount :amount="$client->totalSpent()" size="xs" />
                     </div>
                     <div class="rounded-xl bg-zinc-900/5 px-4 py-3 dark:bg-white/5">
                         <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Pagado</p>
                         <p class="text-lg font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $this->paidTotal(), 2) }}</p>
+                        <x-bs-amount :amount="$this->paidTotal()" size="xs" />
                     </div>
                     <div class="rounded-xl px-4 py-3 {{ (float) $client->pendingBalance() > 0 ? 'bg-warn-bg dark:bg-amber-500/15' : 'bg-profit-bg dark:bg-emerald-500/15' }}">
                         <p class="text-[11px] font-bold uppercase tracking-[0.06em] {{ (float) $client->pendingBalance() > 0 ? 'text-warn-text dark:text-amber-300' : 'text-profit-text dark:text-emerald-300' }}">Pendiente</p>
                         <p class="text-lg font-bold tnum whitespace-nowrap {{ (float) $client->pendingBalance() > 0 ? 'text-warn-text dark:text-amber-300' : 'text-profit-text dark:text-emerald-300' }}">${{ number_format((float) $client->pendingBalance(), 2) }}</p>
+                        <x-bs-amount :amount="$client->pendingBalance()" size="xs" />
                     </div>
                 </div>
 
@@ -130,8 +133,10 @@ new class extends Component {
                                 <div class="flex items-center gap-3">
                                     <div class="text-right">
                                         <p class="font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $sale->total, 2) }}</p>
+                                        <x-bs-amount :amount="$sale->total" size="xs" />
                                         @if ($pending > 0)
                                             <p class="text-xs font-semibold tnum text-amber-700 dark:text-amber-300">Pendiente ${{ number_format($pending, 2) }}</p>
+                                            <x-bs-amount :amount="$pending" size="xs" />
                                         @endif
                                     </div>
 

@@ -196,7 +196,7 @@ class PosPageTest extends TestCase
 
     public function test_payment_proof_is_uploaded_and_saved_with_the_sale(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $product = $this->product();
 
@@ -211,7 +211,7 @@ class PosPageTest extends TestCase
         $sale = Sale::query()->firstOrFail();
 
         $this->assertNotNull($sale->payment_proof_path);
-        Storage::disk('public')->assertExists($sale->payment_proof_path);
+        Storage::disk('local')->assertExists($sale->payment_proof_path);
     }
 
     public function test_casual_client_sale_and_custom_past_date_are_saved(): void
@@ -461,7 +461,7 @@ class PosPageTest extends TestCase
 
     public function test_oversized_payment_proof_is_rejected_with_a_specific_spanish_message(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         $product = $this->product();
 
         $this->actingAs($this->user);
@@ -478,7 +478,7 @@ class PosPageTest extends TestCase
 
     public function test_a_four_megabyte_payment_proof_is_accepted(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
         $product = $this->product();
 
         $this->actingAs($this->user);

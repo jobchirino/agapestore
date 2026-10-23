@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\BcvRateService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Una sola instancia por petición: la tasa se memoiza y las vistas no repiten lecturas.
+        $this->app->singleton(BcvRateService::class);
     }
 
     /**

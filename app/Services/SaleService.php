@@ -5,10 +5,10 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Support\Money;
+use App\Support\PaymentProofs;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Throwable;
@@ -32,6 +32,16 @@ class SaleService
             ]);
         }
 
+        // Autoritativo: la UI también lo valida, pero el servicio no debe permitir
+        // fechas futuras aunque se llame desde otro lugar. Se compara por día completo.
+        $saleDate = Carbon::parse($saleData['date'] ?? now());
+
+        if ($saleDate->copy()->startOfDay()->gt(now()->startOfDay())) {
+            throw ValidationException::withMessages([
+                'date' => 'La fecha de la venta no puede ser futura.',
+            ]);
+        }
+
         // La inicial solo existe en ventas a crédito. Se rechaza explícitamente si llega
         // con una venta de contado, aunque la interfaz no permita enviarla.
         $initialCents = Money::toCents($saleData['initial_payment'] ?? 0);
@@ -52,7 +62,7 @@ class SaleService
         $proofPath = null;
 
         if ($paymentProof !== null) {
-            $proofPath = $paymentProof->store('payment-proofs', 'public');
+            $proofPath = $paymentProof->store(PaymentProofs::DIRECTORY, PaymentProofs::diskName());
 
             if ($proofPath === false) {
                 throw new RuntimeException('No se pudo guardar el comprobante de pago.');
@@ -60,7 +70,7 @@ class SaleService
         }
 
         try {
-            return DB::transaction(function () use ($saleData, $items, $proofPath, $initialCents): Sale {
+            return DB::transaction(function () use ($saleData, $items, $proofPath, $initialCents, $saleDate): Sale {
                 $lines = [];
                 $totalCents = 0;
 
@@ -118,7 +128,7 @@ class SaleService
                     'user_id' => $saleData['user_id'],
                     'total' => Money::fromCents($totalCents),
                     'initial_payment' => Money::fromCents($initialCents),
-                    'date' => $saleData['date'] ?? now(),
+                    'date' => $saleDate,
                     'payment_method' => $saleData['payment_method'],
                     'payment_type' => $saleData['payment_type'] ?? 'contado',
                     'payment_proof_path' => $proofPath ?? ($saleData['payment_proof_path'] ?? null),
@@ -132,7 +142,7 @@ class SaleService
             });
         } catch (Throwable $e) {
             if ($proofPath !== null) {
-                Storage::disk('public')->delete($proofPath);
+                PaymentProofs::disk()->delete($proofPath);
             }
 
             throw $e;

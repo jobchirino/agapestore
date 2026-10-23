@@ -240,7 +240,7 @@ class BackendLogicTest extends TestCase
 
     public function test_payment_proof_is_stored_and_its_path_saved(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $product = Product::factory()->create(['total_stock' => 5, 'detal_price' => 10.00]);
 
@@ -252,12 +252,12 @@ class BackendLogicTest extends TestCase
 
         $this->assertNotNull($sale->payment_proof_path);
         $this->assertStringStartsWith('payment-proofs/', $sale->payment_proof_path);
-        Storage::disk('public')->assertExists($sale->payment_proof_path);
+        Storage::disk('local')->assertExists($sale->payment_proof_path);
     }
 
     public function test_failed_sale_does_not_leave_an_orphan_payment_proof(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $product = Product::factory()->create(['total_stock' => 1, 'detal_price' => 10.00]);
 
@@ -272,7 +272,7 @@ class BackendLogicTest extends TestCase
         } catch (ValidationException) {
         }
 
-        $this->assertSame([], Storage::disk('public')->allFiles('payment-proofs'));
+        $this->assertSame([], Storage::disk('local')->allFiles('payment-proofs'));
         $this->assertSame(1, $product->fresh()->total_stock);
     }
 

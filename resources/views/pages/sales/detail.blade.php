@@ -55,6 +55,9 @@ new class extends Component {
     public function openFromParent(int $saleId): void
     {
         $this->saleId = $saleId;
+        // El componente vive en la página del historial; su mount pudo ejecutarse hace
+        // horas. Al abrir el detalle, la fecha del abono debe ser la de ahora.
+        $this->date = now()->format('Y-m-d\TH:i');
         Flux::modal('sale-detail')->show();
     }
 
@@ -174,6 +177,12 @@ new class extends Component {
 
         $this->reset(['amount', 'proof', 'formError']);
         $this->date = now()->format('Y-m-d\TH:i');
+
+        // El detalle leyó $this->sale antes de guardar (validación + servicio). Livewire
+        // cachea los #[Computed] durante la petición, así que hay que invalidarlos para
+        // que el render muestre el abono y el saldo nuevos sin cerrar el modal.
+        unset($this->sale, $this->payments, $this->previewBalance);
+
         $this->dispatch('payment-registered');
 
         Flux::toast(variant: 'success', text: 'Abono registrado.');
@@ -313,26 +322,31 @@ new class extends Component {
                 <div class="rounded-xl bg-zinc-900/5 px-4 py-3 dark:bg-white/5">
                     <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Total</p>
                     <p class="text-lg font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $sale->total, 2) }}</p>
+                    <x-bs-amount :amount="$sale->total" size="xs" />
                 </div>
 
                 @if ($sale->payment_type === 'credito')
                     <div class="rounded-xl bg-zinc-900/5 px-4 py-3 dark:bg-white/5">
                         <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Inicial</p>
                         <p class="text-lg font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $sale->initial_payment, 2) }}</p>
+                        <x-bs-amount :amount="$sale->initial_payment" size="xs" />
                     </div>
                     <div class="rounded-xl bg-zinc-900/5 px-4 py-3 dark:bg-white/5">
                         <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Abonos</p>
                         <p class="text-lg font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $this->payments->sum('amount'), 2) }}</p>
+                        <x-bs-amount :amount="$this->payments->sum('amount')" size="xs" />
                     </div>
                     <div class="rounded-xl px-4 py-3 {{ (float) $sale->balanceDue() > 0 ? 'bg-warn-bg dark:bg-amber-500/15' : 'bg-profit-bg dark:bg-emerald-500/15' }}">
                         <p class="text-[11px] font-bold uppercase tracking-[0.06em] {{ (float) $sale->balanceDue() > 0 ? 'text-warn-text dark:text-amber-300' : 'text-profit-text dark:text-emerald-300' }}">Pendiente</p>
                         <p class="text-lg font-bold tnum whitespace-nowrap {{ (float) $sale->balanceDue() > 0 ? 'text-warn-text dark:text-amber-300' : 'text-profit-text dark:text-emerald-300' }}">${{ number_format((float) $sale->balanceDue(), 2) }}</p>
+                        <x-bs-amount :amount="$sale->balanceDue()" size="xs" />
                     </div>
                 @endif
 
                 <div class="rounded-xl bg-profit-bg px-4 py-3 dark:bg-emerald-500/15">
                     <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-profit-text dark:text-emerald-300">Ganancia</p>
                     <p class="text-lg font-bold tnum whitespace-nowrap text-profit-text dark:text-emerald-300">+${{ number_format((float) $sale->totalProfit(), 2) }}</p>
+                    <x-bs-amount :amount="$sale->totalProfit()" size="xs" />
                 </div>
             </div>
 
@@ -349,7 +363,10 @@ new class extends Component {
                             <span class="text-zinc-500 dark:text-zinc-400">{{ $sale->dateLabel() }}</span>
                             <span class="text-zinc-500 dark:text-zinc-400">{{ $sale->paymentMethodLabel() }}</span>
                         </div>
-                        <span class="font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $sale->initial_payment, 2) }}</span>
+                        <div class="text-right">
+                            <span class="block font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $sale->initial_payment, 2) }}</span>
+                            <x-bs-amount :amount="$sale->initial_payment" size="xs" />
+                        </div>
                     </div>
 
                     @foreach ($this->payments as $payment)
@@ -359,12 +376,23 @@ new class extends Component {
                                 <span class="text-zinc-500 dark:text-zinc-400">{{ $payment->dateLabel() }}</span>
                                 <span class="text-zinc-500 dark:text-zinc-400">{{ $payment->paymentMethodLabel() }}</span>
                                 @if ($payment->payment_proof_path)
-                                    <a href="{{ asset('storage/'.$payment->payment_proof_path) }}" target="_blank" rel="noopener" class="text-xs font-semibold text-agape underline dark:text-agape-dark">Comprobante</a>
+                                    <a href="{{ route('sales.payments.proof.show', [$sale, $payment]) }}" target="_blank" rel="noopener" class="text-xs font-semibold text-agape underline dark:text-agape-dark">Comprobante</a>
+                                    <flux:button
+                                        size="sm"
+                                        variant="ghost"
+                                        icon="arrow-down-tray"
+                                        :href="route('sales.payments.proof', [$sale, $payment])"
+                                        aria-label="Descargar comprobante"
+                                        title="Descargar comprobante"
+                                    />
                                 @endif
                             </div>
 
                             <div class="flex items-center gap-2">
-                                <span class="font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $payment->amount, 2) }}</span>
+                                <div class="text-right">
+                                    <span class="block font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $payment->amount, 2) }}</span>
+                                    <x-bs-amount :amount="$payment->amount" size="xs" />
+                                </div>
                                 <flux:button size="sm" variant="ghost" icon="trash" wire:click="askDeletePayment({{ $payment->id }})" aria-label="Eliminar abono" />
                             </div>
                         </div>
@@ -378,10 +406,15 @@ new class extends Component {
                 <div>
                     <h3 class="mb-2 text-sm font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Comprobante de la venta</h3>
                     <div class="flex flex-wrap items-start gap-4">
-                        <img src="{{ asset('storage/'.$sale->payment_proof_path) }}" alt="Comprobante de pago" class="max-h-56 rounded-xl border border-gray-200/60 object-contain dark:border-white/10" />
-                        <a href="{{ asset('storage/'.$sale->payment_proof_path) }}" target="_blank" rel="noopener" class="text-sm font-semibold text-agape underline dark:text-agape-dark">
-                            Ver tamaño completo
-                        </a>
+                        <img src="{{ route('sales.proof.show', $sale) }}" alt="Comprobante de pago" class="max-h-56 rounded-xl border border-gray-200/60 object-contain dark:border-white/10" />
+                        <div class="flex flex-wrap items-center gap-3">
+                            <a href="{{ route('sales.proof.show', $sale) }}" target="_blank" rel="noopener" class="text-sm font-semibold text-agape underline dark:text-agape-dark">
+                                Ver tamaño completo
+                            </a>
+                            <flux:button size="sm" variant="outline" icon="arrow-down-tray" :href="route('sales.proof', $sale)">
+                                Descargar comprobante
+                            </flux:button>
+                        </div>
                     </div>
                 </div>
             @endif
@@ -391,8 +424,9 @@ new class extends Component {
                 <form wire:submit="savePayment" class="flex flex-col gap-4 rounded-xl bg-zinc-900/5 p-4 dark:bg-white/5">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <h3 class="text-sm font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Registrar abono</h3>
-                        <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                            Pendiente tras el abono: <span class="font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $this->previewBalance, 2) }}</span>
+                        <span class="text-right text-xs text-zinc-500 dark:text-zinc-400">
+                            Pendiente tras el abono: <span class="block font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $this->previewBalance, 2) }}</span>
+                            <x-bs-amount :amount="$this->previewBalance" size="xs" />
                         </span>
                     </div>
 
@@ -402,7 +436,10 @@ new class extends Component {
 
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div class="flex items-end gap-2">
-                            <flux:input wire:model.live.debounce.500ms="amount" type="number" step="0.01" min="0.01" label="Monto" prefix="$" class="flex-1" />
+                            <div class="flex-1">
+                                <flux:input wire:model.live.debounce.500ms="amount" type="number" step="0.01" min="0.01" label="Monto" prefix="$" />
+                                <x-bs-amount :amount="$amount" class="mt-1 text-right" />
+                            </div>
                             <flux:button type="button" variant="outline" size="sm" wire:click="fillBalance">Liquidar saldo</flux:button>
                         </div>
 

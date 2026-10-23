@@ -102,6 +102,20 @@
         box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.1);
     }
 
+    /* En móvil el panel debe ser opaco: con blur se filtraba el contenido detrás
+       y el menú se veía raro. El efecto glass se conserva solo en escritorio. */
+    @media (max-width: 1023px) {
+        .glass-pane {
+            background: #fff;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+
+        .dark .glass-pane {
+            background: var(--color-panel);
+        }
+    }
+
     /* Card elevation, Level 2 (DESIGN.md) */
     .card-raise {
         box-shadow:

@@ -514,22 +514,26 @@ new #[Title('Registrar Compra')] class extends Component {
                     <div>
                         <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Total de la venta</p>
                         <p class="text-3xl font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $lastSale['total'], 2) }}</p>
+                        <x-bs-amount :amount="$lastSale['total']" />
                     </div>
 
                     @if ($lastSale['type'] === 'credito')
                         <div>
                             <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Inicial recibida</p>
                             <p class="text-3xl font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $lastSale['initial'], 2) }}</p>
+                            <x-bs-amount :amount="$lastSale['initial']" />
                         </div>
                         <div>
                             <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Pendiente</p>
                             <p class="text-3xl font-bold tnum whitespace-nowrap text-amber-600 dark:text-amber-300">${{ number_format((float) $lastSale['balance'], 2) }}</p>
+                            <x-bs-amount :amount="$lastSale['balance']" />
                         </div>
                     @endif
 
                     <div>
                         <p class="text-xs text-profit-text/80 dark:text-emerald-300/80">Ganancia real</p>
                         <p class="text-3xl font-bold tnum whitespace-nowrap text-profit-text dark:text-emerald-300">+${{ number_format((float) $lastSale['profit'], 2) }}</p>
+                        <x-bs-amount :amount="$lastSale['profit']" />
                     </div>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -544,10 +548,10 @@ new #[Title('Registrar Compra')] class extends Component {
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
 
         {{-- ============================ Columna izquierda: productos y carrito --}}
-        <div class="flex flex-col gap-5">
+        <div class="flex min-w-0 flex-col gap-5">
 
             {{-- Buscador de productos --}}
-            <section class="card-raise rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
+            <section class="card-raise min-w-0 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
                 <flux:input
                     wire:model.live.debounce.300ms="productSearch"
                     icon="magnifying-glass"
@@ -555,20 +559,20 @@ new #[Title('Registrar Compra')] class extends Component {
                     placeholder="Nombre del producto..."
                 />
 
-                <div class="mt-3 flex items-end gap-3">
+                <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
                     <flux:input
                         wire:model.live.debounce.500ms="quickQuantity"
                         type="number"
                         min="1"
                         label="Cantidad a agregar"
-                        class="w-32"
+                        class="w-full sm:w-32"
                     />
-                    <p class="pb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400 sm:pb-2">
                         Escribe las unidades y haz clic en el producto.
                     </p>
                 </div>
 
-                <div class="mt-4 flex flex-col gap-2">
+                <div class="mt-4 flex max-h-[26rem] flex-col gap-2 overflow-y-auto pe-1 lg:max-h-none lg:overflow-visible">
                     @forelse ($this->results as $product)
                         @php($inCart = $cart[$product->id] ?? 0)
                         @php($soldOut = $product->total_stock < 1)
@@ -577,7 +581,7 @@ new #[Title('Registrar Compra')] class extends Component {
                             wire:key="result-{{ $product->id }}"
                             wire:click="addProduct({{ $product->id }})"
                             @disabled($soldOut)
-                            class="group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-left transition duration-150 hover:-translate-y-0.5 hover:border-agape/40 hover:bg-zinc-50 hover:shadow-sm active:scale-[0.995] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none dark:hover:bg-white/5"
+                            class="group flex w-full min-w-0 cursor-pointer flex-wrap items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-left transition duration-150 hover:-translate-y-0.5 hover:border-agape/40 hover:bg-zinc-50 hover:shadow-sm active:scale-[0.995] disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none dark:hover:bg-white/5"
                         >
                             @if ($product->img_route)
                                 <img src="{{ asset('storage/'.$product->img_route) }}" alt="{{ $product->name }}" class="size-10 shrink-0 rounded-lg object-cover" />
@@ -592,24 +596,31 @@ new #[Title('Registrar Compra')] class extends Component {
                                 <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">{{ $product->category->name }}</p>
                             </div>
 
-                            <span class="shrink-0 text-sm font-bold tnum text-zinc-900 transition group-hover:text-agape dark:text-white dark:group-hover:text-agape-dark">${{ number_format((float) $product->detal_price, 2) }}</span>
+                            <div class="shrink-0 text-right">
+                                <span class="block text-sm font-bold tnum text-zinc-900 transition group-hover:text-agape dark:text-white dark:group-hover:text-agape-dark">${{ number_format((float) $product->detal_price, 2) }}</span>
+                                <x-bs-amount :amount="$product->detal_price" />
+                            </div>
 
-                            @if ($soldOut)
-                                <span class="shrink-0 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">Agotado</span>
-                            @else
-                                <span class="shrink-0 rounded-full bg-zinc-900/5 px-2.5 py-1 text-xs font-semibold tnum text-zinc-600 dark:bg-white/10 dark:text-zinc-300">{{ $product->total_stock }} uds</span>
-                            @endif
+                            <div class="flex w-full items-start justify-between gap-2 sm:w-auto sm:items-center sm:justify-end">
+                                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                                    @if ($soldOut)
+                                        <span class="shrink-0 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">Agotado</span>
+                                    @else
+                                        <span class="shrink-0 rounded-full bg-zinc-900/5 px-2.5 py-1 text-xs font-semibold tnum text-zinc-600 dark:bg-white/10 dark:text-zinc-300">{{ $product->total_stock }} uds</span>
+                                    @endif
 
-                            @if ($inCart > 0)
-                                <span class="shrink-0 rounded-full bg-agape px-2.5 py-1 text-xs font-bold tnum text-white dark:bg-agape-dark dark:text-ink">{{ $inCart }} en carrito</span>
-                            @endif
+                                    @if ($inCart > 0)
+                                        <span class="shrink-0 rounded-full bg-agape px-2.5 py-1 text-xs font-bold tnum text-white dark:bg-agape-dark dark:text-ink">{{ $inCart }} en carrito</span>
+                                    @endif
+                                </div>
 
-                            {{-- Refuerzo visual: la fila entera es clickeable, pero el botón deja claro que se puede agregar. --}}
-                            @unless ($soldOut)
-                                <span class="inline-flex shrink-0 items-center gap-1 rounded-lg bg-agape/10 px-2.5 py-1 text-xs font-bold text-agape transition group-hover:bg-agape group-hover:text-white dark:bg-agape-dark/15 dark:text-agape-dark dark:group-hover:bg-agape-dark dark:group-hover:text-ink">
-                                    <flux:icon name="plus" class="size-3.5" /> Agregar
-                                </span>
-                            @endunless
+                                {{-- Refuerzo visual: la fila entera es clickeable, pero el botón deja claro que se puede agregar. --}}
+                                @unless ($soldOut)
+                                    <span class="inline-flex shrink-0 items-center gap-1 rounded-lg bg-agape/10 px-2.5 py-1 text-xs font-bold text-agape transition group-hover:bg-agape group-hover:text-white dark:bg-agape-dark/15 dark:text-agape-dark dark:group-hover:bg-agape-dark dark:group-hover:text-ink">
+                                        <flux:icon name="plus" class="size-3.5" /> Agregar
+                                    </span>
+                                @endunless
+                            </div>
                         </button>
                     @empty
                         <p class="py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">No hay productos que coincidan.</p>
@@ -618,7 +629,7 @@ new #[Title('Registrar Compra')] class extends Component {
             </section>
 
             {{-- Artículos cargados --}}
-            <section class="card-raise rounded-2xl border border-gray-200/60 bg-white dark:border-white/10 dark:bg-panel">
+            <section class="card-raise min-w-0 rounded-2xl border border-gray-200/60 bg-white dark:border-white/10 dark:bg-panel">
                 <div class="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-white/10">
                     <h2 class="text-sm font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Artículos cargados</h2>
 
@@ -635,7 +646,7 @@ new #[Title('Registrar Compra')] class extends Component {
 
                 <div class="divide-y divide-gray-100 dark:divide-white/10">
                     @forelse ($this->lines as $line)
-                        <div wire:key="line-{{ $line['id'] }}" class="flex items-center gap-4 px-5 py-4">
+                        <div wire:key="line-{{ $line['id'] }}" class="flex flex-wrap items-center gap-3 px-4 py-4 sm:gap-4 sm:px-5">
                             @if ($line['image'])
                                 <img src="{{ asset('storage/'.$line['image']) }}" alt="{{ $line['name'] }}" class="size-12 shrink-0 rounded-lg object-cover" />
                             @else
@@ -651,31 +662,39 @@ new #[Title('Registrar Compra')] class extends Component {
                                 </p>
                             </div>
 
-                            <div class="flex items-center gap-1">
-                                <flux:button
-                                    size="sm"
-                                    variant="ghost"
-                                    icon="minus"
-                                    wire:click="decrement({{ $line['id'] }})"
-                                    :disabled="$line['quantity'] <= 1"
-                                    aria-label="Quitar una unidad"
-                                />
-                                <span class="w-8 text-center font-bold tnum text-zinc-900 dark:text-white">{{ $line['quantity'] }}</span>
-                                <flux:button
-                                    size="sm"
-                                    variant="ghost"
-                                    icon="plus"
-                                    wire:click="increment({{ $line['id'] }})"
-                                    :disabled="$line['quantity'] >= $line['stock']"
-                                    aria-label="Agregar una unidad"
-                                />
+                            {{-- En móvil las acciones bajan a su propia línea para no desbordar la tarjeta. --}}
+                            <div class="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-4">
+                                <div class="flex items-center gap-1">
+                                    <flux:button
+                                        size="sm"
+                                        variant="ghost"
+                                        icon="minus"
+                                        wire:click="decrement({{ $line['id'] }})"
+                                        :disabled="$line['quantity'] <= 1"
+                                        aria-label="Quitar una unidad"
+                                    />
+                                    <span class="w-8 text-center font-bold tnum text-zinc-900 dark:text-white">{{ $line['quantity'] }}</span>
+                                    <flux:button
+                                        size="sm"
+                                        variant="ghost"
+                                        icon="plus"
+                                        wire:click="increment({{ $line['id'] }})"
+                                        :disabled="$line['quantity'] >= $line['stock']"
+                                        aria-label="Agregar una unidad"
+                                    />
+                                </div>
+
+                                <div class="flex items-center gap-3">
+                                    <div class="w-24 shrink-0 text-right">
+                                        <span class="block font-bold tnum text-zinc-900 dark:text-white">
+                                            ${{ number_format((float) $line['unit_price'] * $line['quantity'], 2) }}
+                                        </span>
+                                        <x-bs-amount :amount="$line['unit_price'] * $line['quantity']" />
+                                    </div>
+
+                                    <flux:button size="sm" variant="ghost" icon="trash" wire:click="removeLine({{ $line['id'] }})" aria-label="Quitar del carrito" />
+                                </div>
                             </div>
-
-                            <span class="w-24 shrink-0 text-right font-bold tnum text-zinc-900 dark:text-white">
-                                ${{ number_format((float) $line['unit_price'] * $line['quantity'], 2) }}
-                            </span>
-
-                            <flux:button size="sm" variant="ghost" icon="trash" wire:click="removeLine({{ $line['id'] }})" aria-label="Quitar del carrito" />
                         </div>
                     @empty
                         <p class="px-5 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400">
@@ -687,7 +706,7 @@ new #[Title('Registrar Compra')] class extends Component {
         </div>
 
         {{-- ============================ Columna derecha: comprador, pago y resumen --}}
-        <div class="flex flex-col gap-5">
+        <div class="flex min-w-0 flex-col gap-5">
 
             {{-- Comprador --}}
             <section class="card-raise rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
@@ -780,18 +799,24 @@ new #[Title('Registrar Compra')] class extends Component {
 
                 @if ($payment_type === 'credito')
                     {{-- La inicial solo tiene sentido en crédito; en la vista nunca se envía con contado. --}}
-                    <flux:input
-                        wire:model.live.debounce.500ms="initial_payment"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        label="Inicial / abono"
-                        prefix="$"
-                    />
+                    <div>
+                        <flux:input
+                            wire:model.live.debounce.500ms="initial_payment"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            label="Inicial / abono"
+                            prefix="$"
+                        />
+                        <x-bs-amount :amount="$initial_payment" class="mt-1 text-right" />
+                    </div>
 
                     <div class="flex items-center justify-between rounded-xl bg-zinc-900/5 px-4 py-2 dark:bg-white/5">
                         <span class="text-sm text-zinc-500 dark:text-zinc-400">Pendiente</span>
-                        <span class="font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $this->summary['balance'], 2) }}</span>
+                        <span class="text-right">
+                            <span class="block font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $this->summary['balance'], 2) }}</span>
+                            <x-bs-amount :amount="$this->summary['balance']" />
+                        </span>
                     </div>
                 @endif
 
@@ -874,13 +899,17 @@ new #[Title('Registrar Compra')] class extends Component {
 
                 <div class="flex items-end justify-between">
                     <span class="text-sm text-zinc-500 dark:text-zinc-400">Total a pagar</span>
-                    <span class="text-[clamp(1.75rem,2.2vw,2.25rem)] font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $this->summary['total'], 2) }}</span>
+                    <span class="text-right">
+                        <span class="block text-[clamp(1.75rem,2.2vw,2.25rem)] font-bold tnum whitespace-nowrap text-zinc-900 dark:text-white">${{ number_format((float) $this->summary['total'], 2) }}</span>
+                        <x-bs-amount :amount="$this->summary['total']" />
+                    </span>
                 </div>
 
                 <div class="flex items-center justify-between rounded-xl bg-profit-bg px-4 py-3 dark:bg-emerald-500/15">
                     <span class="text-sm font-semibold text-profit-text dark:text-emerald-300">Ganancia estimada</span>
-                    <span class="font-bold tnum text-profit-text dark:text-emerald-300">
-                        +${{ number_format((float) $this->summary['profit'], 2) }} ({{ number_format($this->summary['percentage'], 0) }}%)
+                    <span class="text-right font-bold tnum text-profit-text dark:text-emerald-300">
+                        <span class="block">+${{ number_format((float) $this->summary['profit'], 2) }} ({{ number_format($this->summary['percentage'], 0) }}%)</span>
+                        <x-bs-amount :amount="$this->summary['profit']" size="xs" tone="text-profit-text/80 dark:text-emerald-300/80" />
                     </span>
                 </div>
 

@@ -257,6 +257,7 @@ new #[Title('Historial de Ventas')] class extends Component {
         <div class="kpi-card card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Total vendido</p>
             <p class="kpi-figure text-zinc-900 dark:text-white">${{ number_format((float) $this->kpis['total'], 2) }}</p>
+            <x-bs-amount :amount="$this->kpis['total']" />
             <p class="text-sm text-zinc-500 dark:text-zinc-400">
                 {{ $this->kpis['sales_count'] }} {{ $this->kpis['sales_count'] === 1 ? 'venta registrada' : 'ventas registradas' }}
             </p>
@@ -265,6 +266,7 @@ new #[Title('Historial de Ventas')] class extends Component {
         <div class="kpi-card card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Ganancia neta real</p>
             <p class="kpi-figure text-profit-text dark:text-emerald-300">+${{ number_format((float) $this->kpis['profit'], 2) }}</p>
+            <x-bs-amount :amount="$this->kpis['profit']" />
             <div>
                 <span class="inline-block rounded-md bg-profit-bg px-2 py-0.5 text-xs font-bold tnum text-profit-text dark:bg-emerald-500/15 dark:text-emerald-300">
                     {{ number_format($this->kpis['margin'], 0) }}% margen promedio
@@ -275,6 +277,7 @@ new #[Title('Historial de Ventas')] class extends Component {
         <div class="kpi-card card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Saldo por cobrar</p>
             <p class="kpi-figure text-amber-600 dark:text-amber-300">${{ number_format((float) $this->kpis['balance'], 2) }}</p>
+            <x-bs-amount :amount="$this->kpis['balance']" />
             <p class="text-sm text-zinc-500 dark:text-zinc-400">
                 {{ $this->kpis['credit_count'] }} {{ $this->kpis['credit_count'] === 1 ? 'crédito activo' : 'créditos activos' }}
             </p>
@@ -351,7 +354,7 @@ new #[Title('Historial de Ventas')] class extends Component {
         wire:loading.class="opacity-60"
         wire:target="search,selectPeriod,selectStatus,selectMethod,start,end,gotoPage,previousPage,nextPage"
     >
-        <div class="overflow-x-auto">
+        <div id="sales-table" class="scroll-mt-20 overflow-x-auto lg:scroll-mt-6">
             <table class="w-full min-w-[1000px] text-left text-sm">
                 <thead class="border-b border-gray-100 text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:border-white/10 dark:text-zinc-400">
                     <tr>
@@ -402,6 +405,7 @@ new #[Title('Historial de Ventas')] class extends Component {
                                 @if ($sale->payment_type === 'credito')
                                     @if ($balance > 0)
                                         <p class="mt-1 text-xs font-semibold tnum text-amber-700 dark:text-amber-300">Crédito · pendiente ${{ number_format($balance, 2) }}</p>
+                                        <x-bs-amount :amount="$balance" size="xs" />
                                     @else
                                         <p class="mt-1 text-xs font-semibold tnum text-profit-text dark:text-emerald-300">Crédito · pagado</p>
                                     @endif
@@ -410,12 +414,16 @@ new #[Title('Historial de Ventas')] class extends Component {
                                 @endif
                             </td>
 
-                            <td class="px-5 py-2 text-right font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $sale->total, 2) }}</td>
+                            <td class="px-5 py-2 text-right font-bold tnum text-zinc-900 dark:text-white">
+                                ${{ number_format((float) $sale->total, 2) }}
+                                <x-bs-amount :amount="$sale->total" />
+                            </td>
 
                             <td class="px-5 py-2 text-right">
                                 <span class="inline-block rounded-md bg-profit-bg px-2 py-1 text-xs font-bold tnum text-profit-text dark:bg-emerald-500/15 dark:text-emerald-300">
                                     +${{ number_format((float) $sale->totalProfit(), 2) }}
                                 </span>
+                                <x-bs-amount :amount="$sale->totalProfit()" size="xs" />
                             </td>
 
                             <td class="px-5 py-2">
@@ -443,7 +451,7 @@ new #[Title('Historial de Ventas')] class extends Component {
     </section>
 
     <div class="flex justify-center">
-        {{ $this->sales->links() }}
+        {{ $this->sales->links(data: ['scrollTo' => '#sales-table']) }}
     </div>
 
     {{-- Detalle de venta y abonos: componente hijo aislado. Se renderiza siempre para que

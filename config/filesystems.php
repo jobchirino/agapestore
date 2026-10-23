@@ -16,6 +16,12 @@ return [
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
+     * Los comprobantes de pago son privados: se guardan en `local` y solo se
+     * sirven por rutas autenticadas (vista previa inline y descarga).
+     */
+    'payment_proofs_disk' => env('PAYMENT_PROOFS_DISK', 'local'),
+
+    /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------

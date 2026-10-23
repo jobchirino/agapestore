@@ -120,9 +120,9 @@ class SalePaymentTest extends TestCase
         $this->assertSame(0, SalePayment::query()->count());
     }
 
-    public function test_payment_proof_is_stored_on_the_public_disk(): void
+    public function test_payment_proof_is_stored_on_the_private_disk(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $payment = app(SalePaymentService::class)->registerPayment($this->creditSale, [
             'amount' => '30',
@@ -130,12 +130,12 @@ class SalePaymentTest extends TestCase
         ], UploadedFile::fake()->image('abono.jpg'));
 
         $this->assertStringStartsWith('payment-proofs/', $payment->payment_proof_path);
-        Storage::disk('public')->assertExists($payment->payment_proof_path);
+        Storage::disk('local')->assertExists($payment->payment_proof_path);
     }
 
     public function test_failed_payment_does_not_leave_an_orphan_proof(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         try {
             app(SalePaymentService::class)->registerPayment($this->creditSale, [
@@ -145,12 +145,12 @@ class SalePaymentTest extends TestCase
         } catch (ValidationException) {
         }
 
-        $this->assertSame([], Storage::disk('public')->allFiles('payment-proofs'));
+        $this->assertSame([], Storage::disk('local')->allFiles('payment-proofs'));
     }
 
     public function test_deleting_a_payment_restores_the_balance_and_removes_the_proof(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $payment = app(SalePaymentService::class)->registerPayment($this->creditSale, [
             'amount' => '50',
@@ -162,7 +162,7 @@ class SalePaymentTest extends TestCase
         app(SalePaymentService::class)->deletePayment($payment);
 
         $this->assertDatabaseMissing('sale_payments', ['id' => $payment->id]);
-        Storage::disk('public')->assertMissing($path);
+        Storage::disk('local')->assertMissing($path);
         $this->assertSame('150.00', $this->creditSale->fresh()->balanceDue());
     }
 
@@ -182,7 +182,7 @@ class SalePaymentTest extends TestCase
 
     public function test_payment_cannot_be_dated_before_the_sale_day(): void
     {
-        Storage::fake('public');
+        Storage::fake('local');
 
         $sale = $this->saleOn('2026-10-19 10:00:00');
 
@@ -199,7 +199,7 @@ class SalePaymentTest extends TestCase
         }
 
         $this->assertSame(0, SalePayment::query()->count());
-        $this->assertSame([], Storage::disk('public')->allFiles('payment-proofs'));
+        $this->assertSame([], Storage::disk('local')->allFiles('payment-proofs'));
     }
 
     public function test_payment_on_the_sale_day_is_allowed_even_at_an_earlier_time(): void

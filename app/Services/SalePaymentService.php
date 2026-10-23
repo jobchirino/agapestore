@@ -5,10 +5,10 @@ namespace App\Services;
 use App\Models\Sale;
 use App\Models\SalePayment;
 use App\Support\Money;
+use App\Support\PaymentProofs;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -43,7 +43,7 @@ class SalePaymentService
         $proofPath = null;
 
         if ($proof !== null) {
-            $proofPath = $proof->store('payment-proofs', 'public');
+            $proofPath = $proof->store(PaymentProofs::DIRECTORY, PaymentProofs::diskName());
 
             if ($proofPath === false) {
                 throw new RuntimeException('No se pudo guardar el comprobante del abono.');
@@ -100,7 +100,7 @@ class SalePaymentService
         } catch (Throwable $e) {
             // Sin archivos huérfanos si el abono no llega a guardarse.
             if ($proofPath !== null) {
-                Storage::disk('public')->delete($proofPath);
+                PaymentProofs::disk()->delete($proofPath);
             }
 
             throw $e;
@@ -117,7 +117,7 @@ class SalePaymentService
         DB::transaction(fn () => $payment->delete());
 
         if ($proofPath !== null) {
-            Storage::disk('public')->delete($proofPath);
+            PaymentProofs::disk()->delete($proofPath);
         }
     }
 }

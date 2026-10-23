@@ -37,10 +37,18 @@
                     <flux:sidebar.item icon="users" :href="route('clients')" :current="request()->routeIs('clients')" wire:navigate>
                         {{ __('Clientes') }}
                     </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="calculator" :href="route('calculator')" :current="request()->routeIs('calculator')" wire:navigate>
+                        {{ __('Calculadora') }}
+                    </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
             <flux:spacer />
+
+            <flux:sidebar.nav>
+                <livewire:pages::bcv.widget />
+            </flux:sidebar.nav>
 
             {{-- Modo visual. Plegado, el grupo de tres botones no cabe en la barra, así que se
                  muestra un solo botón que rota Claro -> Oscuro -> Sistema. --}}

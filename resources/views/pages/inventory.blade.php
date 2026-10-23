@@ -2,6 +2,7 @@
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Services\BcvRateService;
 use App\Services\CategoryService;
 use App\Services\ProductService;
 use Flux\Flux;
@@ -76,6 +77,11 @@ new #[Title('Inventario')] class extends Component {
             $this->autoCreateRequested = true;
             $this->openCreate();
         }
+    }
+
+    public function bsRate(): ?float
+    {
+        return app(BcvRateService::class)->activeRate();
     }
 
     public function updatedSearch(): void
@@ -441,6 +447,7 @@ new #[Title('Inventario')] class extends Component {
         <div class="kpi-card card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Valor del inventario</p>
             <p class="kpi-figure text-zinc-900 dark:text-white">${{ number_format($this->kpis['sale_value'], 2) }}</p>
+            <x-bs-amount :amount="$this->kpis['sale_value']" />
             <div class="flex flex-wrap items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                 <span class="tnum">Costo base ${{ number_format($this->kpis['cost_value'], 2) }}</span>
                 <span class="rounded-md bg-profit-bg px-2 py-0.5 text-xs font-bold tnum text-profit-text dark:bg-emerald-500/15 dark:text-emerald-300">
@@ -517,7 +524,7 @@ new #[Title('Inventario')] class extends Component {
         wire:target="selectCategory,search,sort,criticalOnly,gotoPage,previousPage,nextPage"
         class="card-raise overflow-hidden rounded-2xl border border-gray-200/60 bg-white transition-opacity duration-200 dark:border-white/10 dark:bg-panel"
     >
-        <div class="overflow-x-auto">
+        <div id="inventory-table" class="scroll-mt-20 overflow-x-auto lg:scroll-mt-6">
             <table class="w-full min-w-[960px] text-left text-sm">
                 <thead class="border-b border-gray-100 text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:border-white/10 dark:text-zinc-400">
                     <tr>
@@ -551,8 +558,14 @@ new #[Title('Inventario')] class extends Component {
                                     {{ $product->category->name }}
                                 </span>
                             </td>
-                            <td class="px-5 py-2 text-right tnum text-zinc-600 dark:text-zinc-300">${{ number_format((float) $product->major_price, 2) }}</td>
-                            <td class="px-5 py-2 text-right tnum font-bold text-zinc-900 dark:text-white">${{ number_format((float) $product->detal_price, 2) }}</td>
+                            <td class="px-5 py-2 text-right tnum text-zinc-600 dark:text-zinc-300">
+                                ${{ number_format((float) $product->major_price, 2) }}
+                                <x-bs-amount :amount="$product->major_price" />
+                            </td>
+                            <td class="px-5 py-2 text-right tnum font-bold text-zinc-900 dark:text-white">
+                                ${{ number_format((float) $product->detal_price, 2) }}
+                                <x-bs-amount :amount="$product->detal_price" />
+                            </td>
                             <td class="px-5 py-2 text-right">
                                 <span class="inline-block rounded-md bg-profit-bg px-2 py-1 text-xs font-bold tnum text-profit-text dark:bg-emerald-500/15 dark:text-emerald-300">
                                     +${{ number_format((float) $product->profitMarginAmount(), 2) }} ({{ number_format($product->profitMarginPercentage(), 0) }}%)
@@ -591,7 +604,7 @@ new #[Title('Inventario')] class extends Component {
     </section>
 
     <div class="flex justify-center">
-        {{ $this->products->links() }}
+        {{ $this->products->links(data: ['scrollTo' => '#inventory-table']) }}
     </div>
 
     {{-- Modal: crear / editar producto --}}
@@ -611,8 +624,13 @@ new #[Title('Inventario')] class extends Component {
                     if (event.target.name === 'major_price') this.major = parseFloat(event.target.value) || 0
                     if (event.target.name === 'detal_price') this.detal = parseFloat(event.target.value) || 0
                 },
+                bsRate: @js($this->bsRate() ?? 0),
                 get amount() { return ((this.detal || 0) - (this.major || 0)).toFixed(2) },
                 get percentage() { return this.major > 0 ? Math.round(((this.detal - this.major) / this.major) * 100) : 0 },
+                get bsProfit() {
+                    const profit = ((this.detal || 0) - (this.major || 0)) * this.bsRate
+                    return 'Bs. ' + profit.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                },
             }"
             x-on:input="refresh($event)"
             class="flex flex-col gap-5"
@@ -640,7 +658,12 @@ new #[Title('Inventario')] class extends Component {
 
             <div class="flex items-center justify-between rounded-xl bg-profit-bg px-4 py-3 text-profit-text dark:bg-emerald-500/15 dark:text-emerald-300">
                 <span class="text-sm font-semibold">Ganancia por unidad</span>
-                <span class="font-bold tnum" x-text="'+$' + amount + ' (' + percentage + '%)'"></span>
+                <span class="text-right">
+                    <span class="block font-bold tnum" x-text="'+$' + amount + ' (' + percentage + '%)'"></span>
+                    @if ($this->bsRate())
+                        <span class="block text-xs font-semibold tnum opacity-80" x-text="bsProfit"></span>
+                    @endif
+                </span>
             </div>
 
             @unless ($editingId)

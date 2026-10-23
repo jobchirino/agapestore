@@ -185,24 +185,29 @@ new #[Title('Inicio')] class extends Component {
         <div class="kpi-card card-raise flex flex-col gap-2 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Vendido hoy</p>
             <p class="kpi-figure text-zinc-900 dark:text-white">${{ number_format((float) $this->kpis['today_total'], 2) }}</p>
+            <x-bs-amount :amount="$this->kpis['today_total']" />
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
                 {{ $this->kpis['today_count'] }} {{ $this->kpis['today_count'] === 1 ? 'operación' : 'operaciones' }}
                 · ganancia +${{ number_format((float) $this->kpis['today_profit'], 2) }}
             </p>
+            <x-bs-amount :amount="$this->kpis['today_profit']" />
         </div>
 
         <div class="kpi-card card-raise flex flex-col gap-2 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Últimos 7 días</p>
             <p class="kpi-figure text-zinc-900 dark:text-white">${{ number_format((float) $this->kpis['week_total'], 2) }}</p>
+            <x-bs-amount :amount="$this->kpis['week_total']" />
             <p class="text-xs text-zinc-500 dark:text-zinc-400">
                 {{ $this->kpis['week_count'] }} {{ $this->kpis['week_count'] === 1 ? 'venta' : 'ventas' }}
                 · ganancia +${{ number_format((float) $this->kpis['week_profit'], 2) }}
             </p>
+            <x-bs-amount :amount="$this->kpis['week_profit']" />
         </div>
 
         <div class="kpi-card card-raise flex flex-col gap-2 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Cuentas por cobrar</p>
             <p class="kpi-figure text-amber-600 dark:text-amber-300">${{ number_format((float) $this->kpis['debt'], 2) }}</p>
+            <x-bs-amount :amount="$this->kpis['debt']" />
             <p class="text-xs text-zinc-500 dark:text-zinc-400">Pendiente en ventas a crédito activas</p>
         </div>
 
@@ -263,6 +268,7 @@ new #[Title('Inicio')] class extends Component {
 
                         <div class="text-right">
                             <p class="font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $sale->total, 2) }}</p>
+                            <x-bs-amount :amount="$sale->total" />
                             <p class="text-xs font-semibold tnum text-profit-text dark:text-emerald-300">+${{ number_format((float) $sale->totalProfit(), 2) }}</p>
                         </div>
 

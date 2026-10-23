@@ -251,12 +251,15 @@ new #[Title('Clientes')] class extends Component {
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Clientes con saldo pendiente</p>
             <p class="kpi-figure text-amber-600 dark:text-amber-300">{{ $this->kpis['debt_count'] }}</p>
             <p class="text-sm text-zinc-500 dark:text-zinc-400">Deben ${{ number_format((float) $this->kpis['debt'], 2) }} en total</p>
+            <x-bs-amount :amount="$this->kpis['debt']" />
         </div>
 
         <div class="kpi-card card-raise flex flex-col gap-3 rounded-2xl border border-gray-200/60 bg-white p-5 dark:border-white/10 dark:bg-panel">
             <p class="text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">Facturado a clientes</p>
             <p class="kpi-figure text-zinc-900 dark:text-white">${{ number_format((float) $this->kpis['billed'], 2) }}</p>
+            <x-bs-amount :amount="$this->kpis['billed']" />
             <p class="text-sm text-zinc-500 dark:text-zinc-400">Ticket promedio ${{ number_format((float) $this->kpis['average'], 2) }} por cliente</p>
+            <x-bs-amount :amount="$this->kpis['average']" />
         </div>
     </section>
 
@@ -305,7 +308,7 @@ new #[Title('Clientes')] class extends Component {
         wire:loading.class="opacity-60"
         wire:target="search,selectFilter,selectSort,gotoPage,previousPage,nextPage"
     >
-        <div class="overflow-x-auto">
+        <div id="clients-table" class="scroll-mt-20 overflow-x-auto lg:scroll-mt-6">
             <table class="w-full min-w-[1000px] text-left text-sm">
                 <thead class="border-b border-gray-100 text-[11px] font-bold uppercase tracking-[0.06em] text-zinc-500 dark:border-white/10 dark:text-zinc-400">
                     <tr>
@@ -344,13 +347,17 @@ new #[Title('Clientes')] class extends Component {
                                 </p>
                             </td>
 
-                            <td class="px-5 py-2 text-right font-bold tnum text-zinc-900 dark:text-white">${{ number_format((float) $client->totalSpent(), 2) }}</td>
+                            <td class="px-5 py-2 text-right font-bold tnum text-zinc-900 dark:text-white">
+                                ${{ number_format((float) $client->totalSpent(), 2) }}
+                                <x-bs-amount :amount="$client->totalSpent()" />
+                            </td>
 
                             <td class="px-5 py-2">
                                 @if ($client->hasPendingBalance())
                                     <span class="inline-block rounded-md bg-warn-bg px-2 py-1 text-xs font-bold tnum text-warn-text dark:bg-amber-500/15 dark:text-amber-300">
                                         Debe ${{ number_format((float) $client->pendingBalance(), 2) }}
                                     </span>
+                                    <x-bs-amount :amount="$client->pendingBalance()" size="xs" />
                                 @else
                                     <span class="inline-block rounded-md bg-zinc-900/5 px-2 py-1 text-xs font-semibold text-zinc-500 dark:bg-white/10 dark:text-zinc-400">
                                         Al día
@@ -379,7 +386,7 @@ new #[Title('Clientes')] class extends Component {
     </section>
 
     <div class="flex justify-center">
-        {{ $this->clients->links() }}
+        {{ $this->clients->links(data: ['scrollTo' => '#clients-table']) }}
     </div>
 
     {{-- Modal: confirmar eliminación --}}
